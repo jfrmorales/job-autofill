@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font: 14px system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 18px; } label { display: block; font-weight: 600; margin: 14px 0 4px; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 8px; font: inherit;
+                      border: 1px solid #cbd5e0; border-radius: 6px; }
+    textarea { min-height: 120px; font-family: ui-monospace, monospace; font-size: 12px; }
+    .warn { background: #fffaf0; border: 1px solid #f6ad55; border-radius: 6px; padding: 10px; font-size: 13px; }
+    button { margin-top: 16px; padding: 10px 18px; background: #2b6cb0; color: #fff; border: 0;
+             border-radius: 6px; font-size: 14px; cursor: pointer; }
+    small { color: #718096; }
+    #saved { color: #2f855a; margin-left: 12px; }
+  </style>
+</head>
+<body>
+  <h1>job-autofill · Ajustes</h1>
+
+  <div class="warn">
+    🔑 La API key se guarda solo en <b>este navegador</b> (chrome.storage.local) y se usa
+    desde el background para llamar a la API de Google. <b>No la compartas</b>. Si la expusiste
+    en algún sitio, regénerala en Google AI Studio.
+  </div>
+
+  <label for="apiKey">API key de Google (Gemini / Gemma)</label>
+  <input id="apiKey" type="password" placeholder="AIza… / AQ…" autocomplete="off" />
+
+  <label for="model">Modelo</label>
+  <select id="model">
+    <option value="gemini-3.5-flash">Gemini 3.5 Flash (rápido)</option>
+    <option value="gemma-4-26b-a4b-it">Gemma 4 26B (abierto, MoE rápido)</option>
+    <option value="gemma-4-31b-it">Gemma 4 31B (abierto, el más grande)</option>
+    <option value="__custom__">Personalizado…</option>
+  </select>
+  <input id="modelCustom" type="text" placeholder="otro-id-de-modelo" autocomplete="off"
+         style="display:none; margin-top:8px;" />
+  <small>Si agotas la cuota de un modelo, cambia a otro. Los <code>gemma-*</code> son modelos
+  abiertos con cuota propia. «Personalizado…» acepta cualquier ID válido de la API de Google.</small>
+
+  <label for="profile">Perfil (JSON)</label>
+  <textarea id="profile"></textarea>
+  <small>Nombre, email, LinkedIn, salario, etc. Lo usa la IA para rellenar los campos.</small>
+
+  <label for="cvText">CV (texto plano)</label>
+  <textarea id="cvText" placeholder="Pega aquí el texto de tu CV…"></textarea>
+  <small>Pega el contenido de tu CV. La IA redacta cover letters y respuestas a partir de
+  aquí, y rellena con esto los campos de «Resume» en texto.</small>
+
+  <label for="cvFile">CV en PDF (para descargar/adjuntar rápido)</label>
+  <input id="cvFile" type="file" accept=".pdf,.doc,.docx" />
+  <small id="cvFileInfo">El navegador no deja adjuntarlo por script, pero el popup te lo
+  baja a Descargas con un clic para que solo tengas que seleccionarlo.</small>
+
+  <div>
+    <button id="save">Guardar</button>
+    <span id="saved"></span>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

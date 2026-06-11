@@ -1,0 +1,48 @@
+# Plantilla de perfil. Cópiala a `perfil.yaml` y rellena tus datos:
+#   cp perfil.example.yaml perfil.yaml
+# `perfil.yaml` está en .gitignore (no se versiona: contiene tus datos personales).
+#
+# Lo determinista (nombre, email, CV, LinkedIn, salario, selects) se rellena
+# sin IA. Las preguntas abiertas (cover letter, "why this company") las redacta
+# la IA por oferta usando tu CV + la descripción.
+
+cv_path: ~/Downloads/TU_CV.pdf
+
+basics:
+  first_name: ""
+  last_name: ""
+  preferred_name: ""
+  email: ""
+  phone: ""                       # p.ej. "+34 ..."
+  location: ""                    # p.ej. "Madrid, Spain (Remote)"
+  linkedin: ""
+  github: ""
+  website: ""
+
+# Expectativa salarial. Si lo dejas vacío, la IA ESTIMA un rango de mercado
+# para el puesto + tu seniority + remoto España/EU.
+salary_expectation: ""
+
+# Preaviso / disponibilidad de incorporación (lo pide tu contrato actual).
+notice_period: ""                 # p.ej. "15 días"
+
+# Respuestas por defecto a desplegables frecuentes.
+# `match`: si alguna de estas frases aparece en la etiqueta de la pregunta,
+# se elige la opción cuyo texto más se parezca a `answer`.
+selects:
+  - match: ["legally authorized to work", "authorized to work", "work authorization"]
+    answer: "Yes"
+  - match: ["require sponsorship", "need sponsorship", "visa sponsorship"]
+    answer: "No"
+  - match: ["are you willing to relocate", "open to relocation"]
+    answer: "Yes"
+  - match: ["how did you hear", "source"]
+    answer: "LinkedIn"
+
+# Para preguntas de diversidad/EEO (gender, race, veteran, disability...)
+eeo_default: "Decline To Self Identify"
+
+# Pitch breve sobre ti (lo usa la IA como contexto adicional al CV).
+pitch: >
+  Resume tu perfil en 2-3 frases: rol, años de experiencia, áreas clave y
+  qué tipo de puesto buscas.

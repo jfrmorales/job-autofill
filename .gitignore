@@ -1,0 +1,16 @@
+# entorno Python
+.venv/
+__pycache__/
+*.pyc
+
+# datos generados / personales
+runs/
+cv.txt
+perfil.yaml
+
+# empaquetados de la extensión
+extension/*.zip
+extension/*.xpi
+
+# basura del SO
+.DS_Store
