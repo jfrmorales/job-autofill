@@ -13,6 +13,8 @@ proveedores soportados y cómo configurarlos.
 """
 from __future__ import annotations
 import os
+import i18n
+from i18n import t
 from ats.base import Job, Question, Answer, TEXT, TEXTAREA, FILE, SELECT, MULTISELECT
 from providers import resolve_ai_config, call_provider, AIConfigError
 
@@ -108,7 +110,11 @@ def build_answers(job: Job, profile: dict):
 
 def ia_prompt(job: Job, profile: dict, open_qs: list[Question], cv_text: str) -> str:
     qs = "\n".join(f"- [{q.key}] {q.label}" for q in open_qs)
-    return f"""Eres un asistente que redacta respuestas para una candidatura de empleo.
+    candidate = (f"{profile.get('basics', {}).get('first_name','')} "
+                 f"{profile.get('basics', {}).get('last_name','')}\n"
+                 f"{profile.get('pitch','')}")
+    if i18n.lang() == "es":
+        return f"""Eres un asistente que redacta respuestas para una candidatura de empleo.
 Responde en el MISMO idioma de la oferta. Tono profesional, concreto, sin clichés.
 No inventes EXPERIENCIA que no esté en el CV.
 
@@ -121,8 +127,7 @@ No inventes EXPERIENCIA que no esté en el CV.
 - Preaviso / incorporación: usa profile['notice_period'] (p.ej. "15 días").
 
 # Candidato (perfil)
-{profile.get('basics', {}).get('first_name','')} {profile.get('basics', {}).get('last_name','')}
-{profile.get('pitch','')}
+{candidate}
 
 # CV
 {cv_text[:6000]}
@@ -131,6 +136,30 @@ No inventes EXPERIENCIA que no esté en el CV.
 {job.description[:4000]}
 
 # Preguntas a responder (devuelve JSON {{clave: respuesta}})
+{qs}
+"""
+    return f"""You are an assistant that drafts answers for a job application.
+Answer in the SAME language as the job posting. Professional, concrete tone, no clichés.
+Do NOT invent EXPERIENCE that is not in the CV.
+
+# Rules (important)
+- NO evasions. None of "I'll discuss it in the interview" / "open to negotiate".
+  Commit to concrete data.
+- Salary: use profile['salary_expectation'] if it has a value; if empty, ESTIMATE a
+  realistic gross annual market range for the role + CV seniority + remote
+  Spain/EU, with currency (e.g. "55,000–65,000 € gross/year").
+- Notice period / start date: use profile['notice_period'] (e.g. "15 days").
+
+# Candidate (profile)
+{candidate}
+
+# CV
+{cv_text[:6000]}
+
+# Job: {job.title} @ {job.company}
+{job.description[:4000]}
+
+# Questions to answer (return JSON {{key: answer}})
 {qs}
 """
 
@@ -143,16 +172,18 @@ def ia_generate(job: Job, profile: dict, open_qs: list[Question], cv_text: str):
     try:
         cfg = resolve_ai_config(profile)
     except AIConfigError as e:
-        print(f"⚠ IA no configurada ({e}); deja las abiertas en blanco")
+        print(t("ai_not_configured", error=e))
         return {}
     try:
         import json
-        prompt = (ia_prompt(job, profile, open_qs, cv_text) +
-                  "\n\nDevuelve únicamente el JSON, sin texto adicional.")
+        json_only = ("\n\nDevuelve únicamente el JSON, sin texto adicional."
+                     if i18n.lang() == "es"
+                     else "\n\nReturn only the JSON, with no extra text.")
+        prompt = ia_prompt(job, profile, open_qs, cv_text) + json_only
         txt = call_provider(cfg, prompt).strip()
         txt = txt[txt.find("{"): txt.rfind("}") + 1]
-        print(f"  IA: {cfg['P']['label']} · {cfg['model']}")
+        print(t("ai_using", label=cfg['P']['label'], model=cfg['model']))
         return json.loads(txt)
     except Exception as e:
-        print(f"⚠ IA no disponible ({e}); deja las abiertas en blanco")
+        print(t("ai_unavailable", error=e))
         return {}

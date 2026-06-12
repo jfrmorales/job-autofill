@@ -11,6 +11,7 @@ import os
 import json
 import datetime
 from pathlib import Path
+from i18n import t
 
 PROFILE_DIR = Path(os.path.expanduser("~/.config/job-autofill/browser"))
 
@@ -68,7 +69,7 @@ def fill_textarea(page, sel: str, value: str, name: str | None = None):
 def upload_file(page, sel: str, path: str):
     p = Path(os.path.expanduser(path)).resolve()
     if not p.exists():
-        raise FileNotFoundError(f"CV no encontrado: {p}")
+        raise FileNotFoundError(t("cv_not_found", path=p))
     page.set_input_files(sel, str(p))
 
 
@@ -90,7 +91,7 @@ def choose_select(page, q, label: str):
         except Exception:
             continue
     if not opened:
-        raise RuntimeError("no pude abrir el desplegable")
+        raise RuntimeError(t("dropdown_open_failed"))
     page.get_by_role("option", name=label, exact=False).first.click(timeout=3000)
 
 
@@ -104,7 +105,7 @@ def run_fill(adapter, job, answers: dict, profile: dict, headed: bool = True, ru
         run_path = Path(run_path)
         _LOG["file"] = open(run_path / "run.log", "a", encoding="utf-8")
         _LOG["events"] = []
-        log(f"── relleno: {job.title} @ {job.company} ({started})")
+        log(t("fill_header", title=job.title, company=job.company, time=started))
 
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
@@ -115,19 +116,19 @@ def run_fill(adapter, job, answers: dict, profile: dict, headed: bool = True, ru
             args=["--disable-blink-features=AutomationControlled"],
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        log(f"\n→ Abriendo: {job.title} @ {job.company}")
+        log(t("opening", title=job.title, company=job.company))
         try:
             adapter.fill(page, job, answers, profile)
         except Exception as e:
             error = str(e)
-            log(f"⚠ error rellenando: {e}")
+            log(t("fill_error", error=e))
 
         log("\n" + "=" * 64)
-        log("  REVISA el navegador, corrige lo que quieras y pulsa TÚ el botón")
-        log("  de Enviar/Submit. NO he enviado nada.")
+        log(t("review_banner_1"))
+        log(t("review_banner_2"))
         log("=" * 64)
         try:
-            input("\nPulsa ENTER aquí cuando termines para cerrar el navegador... ")
+            input(t("press_enter"))
         except (EOFError, KeyboardInterrupt):
             pass
         ctx.close()
@@ -146,7 +147,7 @@ def run_fill(adapter, job, answers: dict, profile: dict, headed: bool = True, ru
         }
         (run_path / "status.json").write_text(
             json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
-        log(f"→ Registro: {run_path / 'run.log'} · estado: {run_path / 'status.json'}")
+        log(t("log_saved", log=run_path / 'run.log', status=run_path / 'status.json'))
         try:
             _LOG["file"].close()
         except Exception:

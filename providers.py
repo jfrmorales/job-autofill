@@ -17,6 +17,8 @@ import os
 import re
 import time
 import httpx
+import i18n
+from i18n import t
 
 # Errores transitorios del servidor del proveedor: merece la pena reintentar.
 RETRY_STATUS = {500, 502, 503, 504}
@@ -143,7 +145,7 @@ def resolve_ai_config(profile: dict) -> dict:
     provider = os.environ.get("JOB_AI_PROVIDER") or ai.get("provider") or DEFAULT_PROVIDER
     P = PROVIDERS.get(provider)
     if not P:
-        raise AIConfigError(f"proveedor desconocido: {provider}")
+        raise AIConfigError(t("provider_unknown", provider=provider))
 
     key = os.environ.get("JOB_AI_API_KEY") or ai.get("api_key") or ""
     if not key:
@@ -153,19 +155,20 @@ def resolve_ai_config(profile: dict) -> dict:
                 break
     key = (key or "").strip()
     if not key and not P.get("allow_empty_key"):
-        envs = " o ".join(P["env_keys"]) or "JOB_AI_API_KEY"
-        raise AIConfigError(f"falta la API key de {P['label']} (define {envs})")
+        sep = " o " if i18n.lang() == "es" else " or "
+        envs = sep.join(P["env_keys"]) or "JOB_AI_API_KEY"
+        raise AIConfigError(t("missing_api_key", label=P['label'], envs=envs))
 
     model = (os.environ.get("JOB_AI_MODEL") or ai.get("model") or P["default_model"] or "").strip()
     if not model:
-        raise AIConfigError(f"falta el modelo de {P['label']}")
+        raise AIConfigError(t("missing_model", label=P['label']))
 
     base = P["default_base_url"] if P["fixed_base_url"] else (
         os.environ.get("JOB_AI_BASE_URL") or ai.get("base_url") or ""
     )
     base = (base or "").rstrip("/")
     if not base:
-        raise AIConfigError("falta la base_url del proveedor personalizado")
+        raise AIConfigError(t("missing_base_url"))
 
     if P.get("json_mode_configurable"):
         json_mode = bool(ai.get("json_mode", P.get("default_json_mode", False)))
@@ -199,7 +202,8 @@ def call_provider(cfg: dict, prompt: str, timeout: float = 90.0, tries: int = 3)
         r = httpx.post(url, headers=headers, json=body, timeout=timeout)
         if r.status_code in RETRY_STATUS and i < tries - 1:
             wait = 1.0 * (i + 1)  # 1s, 2s…
-            print(f"  ⚠ {cfg['model']}: {r.status_code}; reintento {i + 1}/{tries - 1} en {wait:g}s…")
+            print(t("provider_retry", model=cfg['model'], status=r.status_code,
+                    n=i + 1, total=tries - 1, wait=wait))
             time.sleep(wait)
             continue
         r.raise_for_status()

@@ -2,19 +2,26 @@
 // Se ejecuta aquí (no en la página) para evitar CORS y no exponer la key al sitio.
 // El proveedor (Google / OpenAI / Anthropic / compatible) y el modelo se
 // configuran en Ajustes; providers.js sabe cómo hablar con cada API.
-importScripts("providers.js");
+importScripts("i18n.js", "providers.js");
 
 function buildPrompt(profile, cvText, pageText, fields) {
   const fieldList = fields
     .filter((f) => f.type !== "file")
     .map((f) => {
-      let line = `[${f.index}] (${f.type}${f.required ? ", obligatorio" : ""}) ${f.label}`;
-      if (f.options && f.options.length) line += ` | opciones: ${f.options.join(" / ")}`;
+      const req = f.required ? t("bg_obligatory") : "";
+      const optsLabel = getLang() === "es" ? "opciones" : "options";
+      let line = `[${f.index}] (${f.type}${req}) ${f.label}`;
+      if (f.options && f.options.length) line += ` | ${optsLabel}: ${f.options.join(" / ")}`;
       return line;
     })
     .join("\n");
 
-  return `Eres un asistente que rellena formularios de candidatura de empleo.
+  const profileJson = JSON.stringify(profile, null, 2);
+  const cv = (cvText || "").slice(0, 6000);
+  const page = pageText.slice(0, 4000);
+
+  if (getLang() === "es") {
+    return `Eres un asistente que rellena formularios de candidatura de empleo.
 Responde en el MISMO idioma de la oferta. No inventes EXPERIENCIA que no esté en el CV.
 
 # Reglas de respuesta (importante)
@@ -31,13 +38,13 @@ Responde en el MISMO idioma de la oferta. No inventes EXPERIENCIA que no esté e
 - Si una pregunta junta varios temas (p.ej. salario + preaviso), responde TODOS con concreción.
 
 # Perfil del candidato
-${JSON.stringify(profile, null, 2)}
+${profileJson}
 
 # CV (texto)
-${(cvText || "").slice(0, 6000)}
+${cv}
 
 # Oferta / página
-${pageText.slice(0, 4000)}
+${page}
 
 # Campos del formulario
 ${fieldList}
@@ -58,6 +65,52 @@ Reglas por tipo de campo:
 - boolean: "true" o "false".
 - Omite una clave solo si de verdad no tienes el dato (p.ej. teléfono no presente en el
   perfil) ni puedes estimarlo razonablemente. El salario y el preaviso SIEMPRE se responden.`;
+  }
+
+  return `You are an assistant that fills in job application forms.
+Answer in the SAME language as the job posting. Do NOT invent EXPERIENCE that is not in the CV.
+
+# Answer rules (important)
+- NO evasions. Don't use phrases like "I'll discuss it in the interview", "I'm
+  open to negotiate", "we can talk about it later". Commit to concrete data.
+- Salary: if the profile has "salary_expectation" with a value, use it as is. If it's
+  empty, ESTIMATE a REALISTIC gross annual market range for this specific role, the
+  candidate's seniority (see the CV) and the modality/location (remote, Spain/EU).
+  In a text field give a range with currency, e.g. "55,000–65,000 € gross/year".
+  In a (number) field return ONLY the integer of the lower bound, without currency,
+  separators or range, e.g. 55000.
+- Notice period / availability / start date: use the profile's "notice_period"
+  (e.g. "15 days"). Don't say you'll talk about it later.
+- If a question bundles several topics (e.g. salary + notice), answer ALL of them concretely.
+
+# Candidate profile
+${profileJson}
+
+# CV (text)
+${cv}
+
+# Job / page
+${page}
+
+# Form fields
+${fieldList}
+
+# Output instructions
+Respond with ONE single JSON object and NOTHING else (no markdown, no \`\`\`, no text before or after).
+The object's KEYS are the NUMBERS shown in brackets at the start of each field in the
+list above (0, 1, 2, …). The VALUES are your answer for that field.
+Do NOT use the literal words "index" or "value": they are just an example of the shape.
+FORMAT example (with made-up data; use the REAL numbers and data of this case):
+{"0": "Jose Morales", "2": "jose@example.com", "5": "55000"}
+
+Rules per field type:
+- text/textarea: the appropriate text. For open questions (cover letter, "why this company", motivation) write a concrete, honest answer based on the CV.
+- select: return EXACTLY one of the strings in "options".
+- number: return ONLY digits, no currency, thousands separators, symbols or ranges (e.g. 65000).
+- email/tel/url/date: return a value with the proper format for that type.
+- boolean: "true" or "false".
+- Omit a key only if you truly don't have the data (e.g. phone not present in the
+  profile) and can't reasonably estimate it. Salary and notice period are ALWAYS answered.`;
 }
 
 // Hace UNA llamada al proveedor de `cfg` con el `prompt` ya construido y
@@ -79,8 +132,8 @@ async function callProvider(cfg, prompt, timeoutMs = 90000) {
     res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: ac.signal });
   } catch (e) {
     const err = new Error(e.name === "AbortError"
-      ? `${tag}: sin respuesta en ${Math.round(timeoutMs / 1000)}s (timeout)`
-      : `${tag}: red — ${e.message}`);
+      ? t("bg_timeout", { tag, secs: Math.round(timeoutMs / 1000) })
+      : t("bg_network", { tag, error: e.message }));
     err.tag = tag;
     throw err;
   } finally {
@@ -107,11 +160,11 @@ async function callProvider(cfg, prompt, timeoutMs = 90000) {
 function parseJsonObject(txt, tag) {
   const clean = txt.replace(/```(?:json)?/gi, "");
   const a = clean.indexOf("{"), b = clean.lastIndexOf("}");
-  if (a < 0 || b <= a) throw new Error(`${tag}: no devolvió JSON. Empezaba con: ${txt.slice(0, 120)}`);
+  if (a < 0 || b <= a) throw new Error(t("bg_no_json", { tag, start: txt.slice(0, 120) }));
   try {
     return JSON.parse(clean.slice(a, b + 1));
   } catch (e) {
-    throw new Error(`${tag}: JSON inválido (${e.message}). Texto: ${clean.slice(a, a + 150)}`);
+    throw new Error(t("bg_bad_json", { tag, error: e.message, text: clean.slice(a, a + 150) }));
   }
 }
 
@@ -136,7 +189,7 @@ async function callWithRetry(cfg, prompt, notify, tries = 3) {
       lastErr = e;
       if (!RETRY_STATUS.has(e.status) || i === tries - 1) throw e;
       const wait = 1000 * (i + 1); // 1s, 2s…
-      if (notify) notify(`⚠ ${e.tag}: ${e.status}; reintento ${i + 1}/${tries - 1} en ${wait / 1000}s…`);
+      if (notify) notify(t("bg_retry", { tag: e.tag, status: e.status, n: i + 1, total: tries - 1, secs: wait / 1000 }));
       await sleep(wait);
     }
   }
@@ -175,18 +228,18 @@ async function generate({ profile, cvText, pageText, fields, notify }) {
     return parseJsonObject(await callWithRetry(primary, prompt, notify), `${primary.P.label} · ${primary.model}`);
   } catch (e) {
     if (!isFailover(e) || !store.fallback) throw e;
-    const motivo = e.status === 429 ? "cuota agotada (429)" : `fallo del servidor (${e.status})`;
-    if (notify) notify(`⚠ ${e.tag || primary.P.label}: ${motivo}. Probando respaldo…`);
+    const reason = e.status === 429 ? t("bg_quota") : t("bg_server_fail", { status: e.status });
+    if (notify) notify(t("bg_trying_fallback", { tag: e.tag || primary.P.label, reason }));
     let lastErr = e;
     for (const cfg of fallbackConfigs(store, primary.provider)) {
       const tag = `${cfg.P.label} · ${cfg.model}`;
       try {
         const out = parseJsonObject(await callWithRetry(cfg, prompt, notify), tag);
-        if (notify) notify(`↪ Respaldo OK con ${tag}`);
+        if (notify) notify(t("bg_fallback_ok", { tag }));
         return out;
       } catch (e2) {
         lastErr = e2;
-        if (notify) notify(`⚠ Respaldo ${tag} falló: ${e2.message}`);
+        if (notify) notify(t("bg_fallback_fail", { tag, error: e2.message }));
       }
     }
     throw lastErr;
@@ -197,13 +250,14 @@ async function generate({ profile, cvText, pageText, fields, notify }) {
 // config tal cual está en el formulario (sin necesidad de guardarla) y hace una
 // petición mínima. Devuelve { ok, ms, tag, sample } o lanza con el motivo.
 async function testConnection(store) {
+  await applyLangFromStore();
   const cfg = resolveProviderConfig(store); // lanza si falta key/modelo/base URL
   const tag = `${cfg.P.label} · ${cfg.model}`;
   const t0 = Date.now();
   // prompt trivial; sin forzar JSON y con tokens holgados (los de razonamiento
   // gastan tokens "pensando" antes de emitir texto).
-  const txt = await callProvider({ ...cfg, jsonMode: false, maxTokens: 256 },
-    "Responde solo con la palabra: ok", 30000);
+  const ping = getLang() === "es" ? "Responde solo con la palabra: ok" : "Reply with only the word: ok";
+  const txt = await callProvider({ ...cfg, jsonMode: false, maxTokens: 256 }, ping, 30000);
   return { ok: true, ms: Date.now() - t0, tag, sample: (txt || "").trim().slice(0, 40) };
 }
 
@@ -286,21 +340,22 @@ async function doScan(tabId, tabUrl) {
 // Pipeline completo. Devuelve un resumen para el popup (si sigue abierto) y deja
 // el resultado en el badge para cuando esté cerrado.
 async function runFill(tabId, tabUrl) {
+  await applyLangFromStore();
   const startedAt = Date.now();
   let title = tabUrl;
-  try { const t = await chrome.tabs.get(tabId); if (t?.title) title = t.title; } catch {}
+  try { const tb = await chrome.tabs.get(tabId); if (tb?.title) title = tb.title; } catch {}
   // arranca un registro limpio de ejecución (estado "running" desde ya)
   await chrome.storage.local.set({ lastRun: { state: "running", startedAt, url: tabUrl, title } });
-  await pushLog("info", `── nueva ejecución: ${title}`);
+  await pushLog("info", t("bg_run_new", { title }));
   badge("…", "#2b6cb0");
   try {
-    await step("Escaneando formulario…");
+    await step(t("bg_scanning"));
     const { fields, contextText, frameId } = await doScan(tabId, tabUrl);
     await patchRun({ scan: { fields: fields.length, frameId } });
-    await pushLog("info", `Escaneo: ${fields.length} campos detectados (frame ${frameId}).`);
+    await pushLog("info", t("bg_scan_result", { n: fields.length, frame: frameId }));
     if (!fields.length) {
       badge("0", "#dd6b20");
-      const error = "No encontré campos. Pulsa «Apply» para abrir el formulario y reintenta.";
+      const error = t("bg_scan_zero");
       await patchRun({ state: "error", finishedAt: Date.now(), error });
       await pushLog("error", error);
       return { ok: false, error };
@@ -313,16 +368,16 @@ async function runFill(tabId, tabUrl) {
     const resumeFields = fields.filter((f) => f.resume);
     const aiFields = fields.filter((f) => !f.resume);
 
-    await step(`Generando respuestas con IA para ${aiFields.length} campos…`);
+    await step(t("bg_generating", { n: aiFields.length }));
     const genStart = Date.now();
     const answers = { ...(await generate({
       profile: profile || {}, cvText: cvText || "", pageText: contextText, fields: aiFields,
-      notify: (t) => step(t), // mensajes de respaldo (429) al registro/progreso
+      notify: (msg) => step(msg), // mensajes de respaldo (429) al registro/progreso
     })) };
-    await pushLog("info", `IA (${modelTag}): ${Object.keys(answers).length} respuestas en ${Math.round((Date.now() - genStart) / 1000)}s.`);
+    await pushLog("info", t("bg_ai_done", { tag: modelTag, n: Object.keys(answers).length, secs: Math.round((Date.now() - genStart) / 1000) }));
     if (cvText) for (const f of resumeFields) answers[f.index] = cvText;
 
-    await step("Rellenando…");
+    await step(t("bg_filling"));
     const r = await chrome.tabs.sendMessage(tabId, { action: "fill", answers }, { frameId });
 
     // registra el resultado de cada campo, con el motivo del fallo si lo hubo
@@ -334,14 +389,14 @@ async function runFill(tabId, tabUrl) {
     }
 
     badge(String(r.ok), r.fail ? "#dd6b20" : "#38a169");
-    let msg = `✓ Rellenados ${r.ok} campos` + (r.fail ? `, ${r.fail} en rojo (revísalos).` : ".");
-    if (resumeFields.length && cvText) msg += "\n📄 «Resume» en texto rellenado con tu CV.";
-    if (r.files) msg += `\n⬇ ${r.files} campo(s) de fichero (en naranja): adjunta ${cvFileName || "tu CV"} a mano.`;
+    let msg = t("bg_filled", { ok: r.ok }) + (r.fail ? t("bg_filled_fail", { fail: r.fail }) : t("bg_filled_done"));
+    if (resumeFields.length && cvText) msg += t("bg_resume_note");
+    if (r.files) msg += t("bg_files_note", { n: r.files, cv: cvFileName || t("cv_default") });
     await patchRun({
       state: "done", finishedAt: Date.now(), summary: msg,
       result: { ok: r.ok, fail: r.fail, files: r.files, details: r.details || [] },
     });
-    await pushLog("info", `Hecho: ${r.ok} ok, ${r.fail} fallidos, ${r.files} de fichero.`);
+    await pushLog("info", t("bg_done", { ok: r.ok, fail: r.fail, files: r.files }));
     return { ok: true, summary: msg };
   } catch (e) {
     badge("!", "#e53e3e");

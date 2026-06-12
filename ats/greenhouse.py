@@ -14,6 +14,7 @@ from .base import (
     register, Job, Question, Option,
     TEXT, TEXTAREA, FILE, SELECT, MULTISELECT,
 )
+from i18n import t
 
 API = "https://boards-api.greenhouse.io/v1/boards/{token}/jobs/{job_id}?questions=true"
 
@@ -133,7 +134,7 @@ class Greenhouse:
                     fill_text(page, sel, ans.value, name)
                 log(f"  ✓ {q.label[:50]}")
             except Exception as e:  # tolerante: semi-auto, el humano revisa
-                log(f"  ⚠ no pude rellenar «{q.label[:40]}»: {e}")
+                log("  ⚠ " + t("fill_field_failed", label=q.label[:40], error=e))
 
 
 register(Greenhouse)

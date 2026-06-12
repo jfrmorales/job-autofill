@@ -23,24 +23,25 @@
   </style>
 </head>
 <body>
-  <h1>job-autofill</h1>
-  <button id="fill">⚡ Rellenar con IA</button>
+  <h1 data-i18n="app_title">job-autofill</h1>
+  <button id="fill" data-i18n="btn_fill">⚡ Rellenar con IA</button>
   <div class="row">
-    <button id="cvdl" class="sec">⬇ CV a Descargas</button>
-    <button id="cvcopy" class="sec">📋 Copiar CV</button>
+    <button id="cvdl" class="sec" data-i18n="btn_cvdl">⬇ CV a Descargas</button>
+    <button id="cvcopy" class="sec" data-i18n="btn_cvcopy">📋 Copiar CV</button>
   </div>
   <div class="row">
-    <button id="scan" class="sec">Solo escanear</button>
-    <button id="opts" class="sec">Ajustes</button>
+    <button id="scan" class="sec" data-i18n="btn_scan">Solo escanear</button>
+    <button id="opts" class="sec" data-i18n="btn_opts">Ajustes</button>
   </div>
   <div id="status"></div>
   <div id="last"></div>
   <div class="row">
-    <button id="togglelog" class="sec">Ver registro</button>
-    <button id="copylog" class="sec">📋 Copiar registro</button>
+    <button id="togglelog" class="sec" data-i18n="btn_showlog">Ver registro</button>
+    <button id="copylog" class="sec" data-i18n="btn_copylog">📋 Copiar registro</button>
   </div>
   <div id="log" style="display:none"></div>
-  <p style="margin:8px 0 0"><small>Revisa, adjunta el CV y <b>envía tú</b>. La extensión nunca envía.</small></p>
+  <p style="margin:8px 0 0"><small data-i18n-html="popup_footer">Revisa, adjunta el CV y <b>envía tú</b>. La extensión nunca envía.</small></p>
+  <script src="i18n.js"></script>
   <script src="providers.js"></script>
   <script src="popup.js"></script>
 </body>

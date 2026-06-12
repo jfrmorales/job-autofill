@@ -34,7 +34,7 @@ function fillProviderSelect() {
   for (const [id, P] of Object.entries(PROVIDERS)) {
     const o = document.createElement("option");
     o.value = id;
-    o.textContent = P.label;
+    o.textContent = P.labelKey ? t(P.labelKey) : P.label;
     sel.appendChild(o);
   }
 }
@@ -53,15 +53,15 @@ function selectedModel() {
 function populateModels(P, current) {
   const sel = $("model");
   sel.innerHTML = "";
-  for (const [val, label] of (P.models || [])) {
+  for (const [val, name, descKey] of (P.models || [])) {
     const o = document.createElement("option");
     o.value = val;
-    o.textContent = label;
+    o.textContent = descKey ? `${name} (${t(descKey)})` : name;
     sel.appendChild(o);
   }
   const custom = document.createElement("option");
   custom.value = "__custom__";
-  custom.textContent = "Personalizado…";
+  custom.textContent = t("model_custom_option");
   sel.appendChild(custom);
 
   const known = (P.models || []).some(([v]) => v === current);
@@ -82,8 +82,8 @@ function populateModels(P, current) {
 function applyProvider(providerId) {
   const P = PROVIDERS[providerId];
 
-  $("apiKeyLabel").textContent = P.keyLabel;
-  $("apiKey").placeholder = P.keyHint || "";
+  $("apiKeyLabel").textContent = P.keyName ? t("api_key_label", { name: P.keyName }) : t("api_key_optional");
+  $("apiKey").placeholder = P.keyHintKey ? t(P.keyHintKey) : (P.keyHint || "");
   $("apiKey").value = state.keys[providerId] || "";
 
   if (P.fixedBaseUrl) {
@@ -107,9 +107,7 @@ function applyProvider(providerId) {
     $("jsonModeHint").style.display = "none";
   }
 
-  $("providerHint").textContent = P.fixedBaseUrl
-    ? ""
-    : "Cualquier API compatible con OpenAI: OpenRouter, Groq, Together, Mistral, DeepSeek, Ollama/LM Studio (local)…";
+  $("providerHint").textContent = P.fixedBaseUrl ? "" : t("custom_provider_hint");
 }
 
 // Vuelca lo escrito ahora mismo en pantalla al estado del proveedor activo.
@@ -134,12 +132,27 @@ $("model").onchange = syncModelCustom;
 
 // --- carga inicial ----------------------------------------------------------
 
-fillProviderSelect();
+// Cambiar idioma: persiste, re-traduce el HTML estático y repinta las partes
+// dinámicas (etiquetas de proveedor/modelo, que dependen del idioma).
+$("lang").onchange = async () => {
+  setLang($("lang").value);
+  await chrome.storage.local.set({ lang: getLang() });
+  applyI18n();
+  fillProviderSelect();
+  $("provider").value = activeProvider;
+  applyProvider(activeProvider);
+};
 
-chrome.storage.local.get(
-  ["provider", "model", "apiKeys", "apiKey", "customBaseUrl", "jsonMode", "fallback",
-   "temperature", "maxTokens", "profile", "cvText", "cvFileName"]
-).then((s) => {
+(async () => {
+  await applyLangFromStore();
+  applyI18n();
+  $("lang").value = getLang();
+  fillProviderSelect();
+
+  const s = await chrome.storage.local.get(
+    ["provider", "model", "apiKeys", "apiKey", "customBaseUrl", "jsonMode", "fallback",
+     "temperature", "maxTokens", "profile", "cvText", "cvFileName"]);
+
   // compat: versiones antiguas guardaban una sola `apiKey` (era de Google)
   state.keys = s.apiKeys || (s.apiKey ? { google: s.apiKey } : {});
   state.customBaseUrl = s.customBaseUrl || "";
@@ -156,8 +169,8 @@ chrome.storage.local.get(
 
   $("profile").value = JSON.stringify(s.profile || DEFAULT_PROFILE, null, 2);
   $("cvText").value = s.cvText || "";
-  if (s.cvFileName) $("cvFileInfo").textContent = `Guardado: ${s.cvFileName}`;
-});
+  if (s.cvFileName) $("cvFileInfo").textContent = t("cvfile_saved", { name: s.cvFileName });
+})();
 
 // --- CV: extracción de PDF (sin cambios de comportamiento) -------------------
 
@@ -192,27 +205,27 @@ $("cvFile").onchange = async () => {
   const reader = new FileReader();
   reader.onload = async () => {
     await chrome.storage.local.set({ cvFile: reader.result, cvFileName: file.name });
-    $("cvFileInfo").textContent = `✓ Guardado: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+    $("cvFileInfo").textContent = t("cvfile_saved_ok", { name: file.name, kb: Math.round(file.size / 1024) });
   };
   reader.readAsDataURL(file);
 
   const ext = $("cvExtract");
   if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") {
-    ext.textContent = "⏳ Extrayendo texto del PDF…";
+    ext.textContent = t("cv_extracting");
     ext.style.color = "#718096";
     try {
       const text = await extractPdfText(file);
-      if (!text) throw new Error("el PDF no contiene texto seleccionable (¿es un escaneo/imagen?)");
+      if (!text) throw new Error(t("cv_no_selectable"));
       $("cvText").value = text;
       await chrome.storage.local.set({ cvText: text });
-      ext.textContent = `✓ Texto extraído (${text.length} caracteres) y guardado.`;
+      ext.textContent = t("cv_extracted", { len: text.length });
       ext.style.color = "#2f855a";
     } catch (e) {
-      ext.textContent = `✗ No pude extraer el texto: ${e.message || e}. Pégalo a mano abajo.`;
+      ext.textContent = t("cv_extract_fail", { error: e.message || e });
       ext.style.color = "#c53030";
     }
   } else {
-    ext.textContent = "ℹ Solo extraigo texto de PDF; para otros formatos pega el texto a mano.";
+    ext.textContent = t("cv_only_pdf");
     ext.style.color = "#718096";
   }
 };
@@ -241,8 +254,8 @@ function buildStore(showErr) {
   const provider = activeProvider;
   const P = PROVIDERS[provider];
   const model = state.models[provider] || "";
-  if (!model) { showErr("✗ Escribe el id del modelo"); return null; }
-  if (!P.fixedBaseUrl && !state.customBaseUrl) { showErr("✗ Falta la Base URL del proveedor"); return null; }
+  if (!model) { showErr(t("err_need_model")); return null; }
+  if (!P.fixedBaseUrl && !state.customBaseUrl) { showErr(t("err_need_baseurl")); return null; }
   const adv = readAdvanced();
   return {
     provider,
@@ -282,15 +295,15 @@ $("test").onclick = async () => {
   const P = PROVIDERS[store.provider];
   if (!P.fixedBaseUrl) {
     const ok = await ensureHostPermission(store.customBaseUrl);
-    if (!ok) { setRes("✗ Permiso de red denegado para esa URL", "#c53030"); return; }
+    if (!ok) { setRes(t("net_denied"), "#c53030"); return; }
   }
-  setRes("⏳ Probando…", "#718096");
+  setRes(t("test_probing"), "#718096");
   try {
     const r = await chrome.runtime.sendMessage({ action: "testConnection", store });
-    if (r && r.ok) setRes(`✓ OK (${r.ms} ms) — ${r.tag}`, "#2f855a");
-    else setRes(`✗ ${r ? r.error : "sin respuesta"}`, "#c53030");
+    if (r && r.ok) setRes(t("test_ok", { ms: r.ms, tag: r.tag }), "#2f855a");
+    else setRes(t("test_fail", { error: r ? r.error : t("test_no_response") }), "#c53030");
   } catch (e) {
-    setRes(`✗ ${e.message || e}`, "#c53030");
+    setRes(t("test_fail", { error: e.message || e }), "#c53030");
   }
 };
 
@@ -299,7 +312,7 @@ $("save").onclick = async () => {
   try {
     profile = JSON.parse($("profile").value);
   } catch (e) {
-    showSaved("✗ El perfil no es JSON válido", "#c53030");
+    showSaved(t("saved_bad_json"), "#c53030");
     return;
   }
 
@@ -312,7 +325,7 @@ $("save").onclick = async () => {
     // muestre el diálogo de permiso; por eso va antes de cualquier escritura.
     const ok = await ensureHostPermission(store.customBaseUrl);
     if (!ok) {
-      showSaved("✗ Permiso de red denegado para esa URL", "#c53030");
+      showSaved(t("net_denied"), "#c53030");
       return;
     }
   }
@@ -321,5 +334,5 @@ $("save").onclick = async () => {
   // Quita la clave del esquema antiguo (una sola `apiKey`) para no confundir.
   await chrome.storage.local.remove("apiKey");
 
-  showSaved("✓ Guardado", "#2f855a");
+  showSaved(t("saved_ok"), "#2f855a");
 };

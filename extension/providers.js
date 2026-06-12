@@ -34,7 +34,7 @@ function openaiChatBody(model, prompt, opts) {
 function openaiChatExtract(data) {
   const choice = data && data.choices && data.choices[0];
   const txt = choice && choice.message && choice.message.content;
-  if (!txt) throw new Error(`respuesta vacía (finish=${(choice && choice.finish_reason) || "?"})`);
+  if (!txt) throw new Error(t("prov_empty", { reason: (choice && choice.finish_reason) || "?" }));
   return txt;
 }
 
@@ -42,16 +42,17 @@ const PROVIDERS = {
   // ----------------------------------------------------------------- Google
   google: {
     label: "Google (Gemini / Gemma)",
-    keyLabel: "API key de Google AI Studio",
+    keyName: "Google AI Studio",
     keyHint: "AIza… / AQ…",
     fixedBaseUrl: true,
     defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta",
     defaultModel: "gemini-3.5-flash",
+    // [id, nombre, clave-i18n de la descripción opcional]
     models: [
-      ["gemini-3.5-flash", "Gemini 3.5 Flash (rápido)"],
-      ["gemini-3.5-pro", "Gemini 3.5 Pro (potente)"],
-      ["gemma-4-26b-a4b-it", "Gemma 4 26B (abierto, MoE rápido)"],
-      ["gemma-4-31b-it", "Gemma 4 31B (abierto, el más grande)"],
+      ["gemini-3.5-flash", "Gemini 3.5 Flash", "m_fast"],
+      ["gemini-3.5-pro", "Gemini 3.5 Pro", "m_powerful"],
+      ["gemma-4-26b-a4b-it", "Gemma 4 26B", "m_open_moe"],
+      ["gemma-4-31b-it", "Gemma 4 31B", "m_open_largest"],
     ],
     jsonModeConfigurable: false,
     endpoint: (base, model) => `${base}/models/${model}:generateContent`,
@@ -64,15 +65,13 @@ const PROVIDERS = {
       return { contents: [{ parts: [{ text: prompt }] }], generationConfig: gc };
     },
     extract: (data) => {
-      if (data.promptFeedback?.blockReason) throw new Error(`prompt bloqueado (${data.promptFeedback.blockReason})`);
+      if (data.promptFeedback?.blockReason) throw new Error(t("prov_blocked", { reason: data.promptFeedback.blockReason }));
       const cand = data?.candidates?.[0];
       const txt = (cand?.content?.parts || [])
         .filter((p) => p && typeof p.text === "string").map((p) => p.text).join("");
       if (!txt) {
-        const reason = cand?.finishReason || "sin candidatos";
-        throw new Error(reason === "MAX_TOKENS"
-          ? "respuesta agotó tokens pensando (sube «máx. tokens de salida»)"
-          : `respuesta vacía (finishReason=${reason})`);
+        const reason = cand?.finishReason || t("prov_no_candidates");
+        throw new Error(reason === "MAX_TOKENS" ? t("prov_max_tokens") : t("prov_empty", { reason }));
       }
       return txt;
     },
@@ -81,17 +80,17 @@ const PROVIDERS = {
   // ----------------------------------------------------------------- OpenAI
   openai: {
     label: "OpenAI (GPT)",
-    keyLabel: "API key de OpenAI",
+    keyName: "OpenAI",
     keyHint: "sk-…",
     fixedBaseUrl: true,
     defaultBaseUrl: "https://api.openai.com/v1",
     defaultModel: "gpt-4o-mini",
     models: [
-      ["gpt-4o-mini", "GPT-4o mini (barato, rápido)"],
-      ["gpt-4o", "GPT-4o"],
-      ["gpt-4.1-mini", "GPT-4.1 mini"],
-      ["gpt-4.1", "GPT-4.1"],
-      ["o4-mini", "o4-mini (razonamiento)"],
+      ["gpt-4o-mini", "GPT-4o mini", "m_cheap_fast"],
+      ["gpt-4o", "GPT-4o", null],
+      ["gpt-4.1-mini", "GPT-4.1 mini", null],
+      ["gpt-4.1", "GPT-4.1", null],
+      ["o4-mini", "o4-mini", "m_reasoning"],
     ],
     jsonModeConfigurable: true,
     defaultJsonMode: true,
@@ -104,15 +103,15 @@ const PROVIDERS = {
   // -------------------------------------------------------------- Anthropic
   anthropic: {
     label: "Anthropic (Claude)",
-    keyLabel: "API key de Anthropic",
+    keyName: "Anthropic",
     keyHint: "sk-ant-…",
     fixedBaseUrl: true,
     defaultBaseUrl: "https://api.anthropic.com/v1",
     defaultModel: "claude-haiku-4-5",
     models: [
-      ["claude-haiku-4-5", "Claude Haiku 4.5 (rápido, barato)"],
-      ["claude-sonnet-4-6", "Claude Sonnet 4.6 (equilibrado)"],
-      ["claude-opus-4-8", "Claude Opus 4.8 (el más potente)"],
+      ["claude-haiku-4-5", "Claude Haiku 4.5", "m_cheap_fast"],
+      ["claude-sonnet-4-6", "Claude Sonnet 4.6", "m_balanced"],
+      ["claude-opus-4-8", "Claude Opus 4.8", "m_strongest"],
     ],
     jsonModeConfigurable: false,
     endpoint: (base) => `${base}/messages`,
@@ -132,7 +131,7 @@ const PROVIDERS = {
     }),
     extract: (data) => {
       const txt = (data?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
-      if (!txt) throw new Error(`respuesta vacía (stop=${data?.stop_reason || "?"})`);
+      if (!txt) throw new Error(t("prov_empty", { reason: data?.stop_reason || "?" }));
       return txt;
     },
   },
@@ -141,9 +140,10 @@ const PROVIDERS = {
   // Base URL la pone el usuario; usa el formato Chat Completions. Cubre
   // OpenRouter, Groq, Together, Mistral, DeepSeek, xAI, Ollama, LM Studio, etc.
   custom: {
-    label: "Compatible con OpenAI (personalizado)",
-    keyLabel: "API key (déjala vacía si el servidor no la pide)",
-    keyHint: "sk-… · vacío para servidores locales",
+    label: "OpenAI-compatible (custom)",
+    labelKey: "provider_custom",       // el desplegable lo traduce con t()
+    keyName: null,                      // sin marca: usa la etiqueta «API key (opcional)»
+    keyHintKey: "key_hint_custom",      // placeholder traducible
     fixedBaseUrl: false,
     baseUrlHint: "https://openrouter.ai/api/v1 · https://api.groq.com/openai/v1 · http://localhost:11434/v1",
     defaultBaseUrl: "",
@@ -171,17 +171,17 @@ const DEFAULT_PROVIDER = "google";
 function resolveProviderConfig(store) {
   const providerId = store.provider || DEFAULT_PROVIDER;
   const P = PROVIDERS[providerId];
-  if (!P) throw new Error(`Proveedor desconocido: ${providerId}`);
+  if (!P) throw new Error(t("prov_unknown", { provider: providerId }));
 
   const apiKeys = store.apiKeys || (store.apiKey ? { google: store.apiKey } : {});
   const apiKey = (apiKeys[providerId] || "").trim();
-  if (!apiKey && !P.allowEmptyKey) throw new Error(`Falta la API key de ${P.label} (ponla en Ajustes).`);
+  if (!apiKey && !P.allowEmptyKey) throw new Error(t("prov_missing_key", { label: P.label }));
 
   const model = (store.model || P.defaultModel || "").trim();
-  if (!model) throw new Error(`Falta el modelo de ${P.label} (escríbelo en Ajustes).`);
+  if (!model) throw new Error(t("prov_missing_model", { label: P.label }));
 
   let baseUrl = P.fixedBaseUrl ? P.defaultBaseUrl : (store.customBaseUrl || "").trim();
-  if (!baseUrl) throw new Error("Falta la Base URL del proveedor personalizado (ponla en Ajustes).");
+  if (!baseUrl) throw new Error(t("prov_missing_baseurl"));
   baseUrl = baseUrl.replace(/\/+$/, ""); // sin barra final
 
   const jsonMode = P.jsonModeConfigurable

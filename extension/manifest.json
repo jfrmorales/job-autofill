@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "job-autofill",
   "version": "0.1.0",
-  "description": "Rellena candidaturas de empleo con IA (Google, OpenAI, Anthropic o cualquier API compatible). Tú revisas y envías.",
+  "description": "Fill job applications with AI (Google, OpenAI, Anthropic or any compatible API). You review and submit. · Rellena candidaturas de empleo con IA; tú revisas y envías.",
   "permissions": ["storage", "activeTab", "scripting", "downloads", "webNavigation"],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["https://*/*"],
-      "js": ["content.js"],
+      "js": ["i18n.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

@@ -67,15 +67,15 @@ function scan() {
 
   // inputs
   document.querySelectorAll("input").forEach((el) => {
-    const t = (el.type || "text").toLowerCase();
-    if (["hidden", "submit", "button", "reset", "image", "password"].includes(t)) return;
+    const ty = (el.type || "text").toLowerCase();
+    if (["hidden", "submit", "button", "reset", "image", "password"].includes(ty)) return;
     if (!isVisible(el)) return;
 
-    if (t === "file") {
-      push(out, { el, type: "file" }, { label: clean(labelFor(el)), type: "file", note: "súbelo tú (el navegador no deja por seguridad)" });
+    if (ty === "file") {
+      push(out, { el, type: "file" }, { label: clean(labelFor(el)), type: "file", note: t("c_upload_manual") });
       return;
     }
-    if (t === "radio") {
+    if (ty === "radio") {
       if (!el.name || seenRadioGroups.has(el.name)) return;
       seenRadioGroups.add(el.name);
       const group = [...document.querySelectorAll(`input[type=radio][name="${CSS.escape(el.name)}"]`)];
@@ -84,13 +84,13 @@ function scan() {
       push(out, { el, type: "radio", optionEls: group, optionLabels: options }, { label: grpLabel, type: "select", options });
       return;
     }
-    if (t === "checkbox") {
+    if (ty === "checkbox") {
       push(out, { el, type: "checkbox" }, { label: clean(labelFor(el)), type: "boolean" });
       return;
     }
     // text/email/tel/url/number/search — conserva el subtipo para guiar al modelo
-    const sub = ["number", "email", "tel", "url", "date"].includes(t) ? t : "text";
-    push(out, { el, type: "text", inputType: t }, { label: clean(labelFor(el)), type: sub });
+    const sub = ["number", "email", "tel", "url", "date"].includes(ty) ? ty : "text";
+    push(out, { el, type: "text", inputType: ty }, { label: clean(labelFor(el)), type: sub });
   });
 
   // react-select (Greenhouse/Ashby): combobox sin <select> nativo
@@ -174,11 +174,11 @@ async function fill(answers) {
     const idx = Number(idxStr);
     const f = FIELD_MAP[idx];
     if (!f) {
-      details.push({ index: idx, label: "(campo no encontrado)", status: "fail", reason: "índice fuera del formulario escaneado" });
+      details.push({ index: idx, label: t("c_field_not_found"), status: "fail", reason: t("c_index_oob") });
       fail++; continue;
     }
     if (value === "" || value == null) {
-      details.push({ index: idx, label: f.label, status: "skip", reason: "la IA no devolvió valor" });
+      details.push({ index: idx, label: f.label, status: "skip", reason: t("c_no_value") });
       continue;
     }
     try {
@@ -187,7 +187,7 @@ async function fill(answers) {
         let v = String(value);
         if (f.inputType === "number") {
           v = toNumber(v);
-          if (!v) throw new Error("valor no numérico para campo number");
+          if (!v) throw new Error(t("c_not_numeric"));
         }
         setNativeValue(f.el, v);
       } else if (f.type === "select") {
@@ -195,17 +195,17 @@ async function fill(answers) {
         const opt = [...sel.options].find((o) => o.textContent.trim().toLowerCase() === String(value).toLowerCase())
           || [...sel.options].find((o) => o.textContent.trim().toLowerCase().includes(String(value).toLowerCase()));
         if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event("change", { bubbles: true })); }
-        else throw new Error("opción no encontrada");
+        else throw new Error(t("c_option_not_found"));
       } else if (f.type === "radio") {
         const i = f.optionLabels.findIndex((l) => l.toLowerCase() === String(value).toLowerCase()
           || l.toLowerCase().includes(String(value).toLowerCase()));
-        if (i >= 0) { f.optionEls[i].click(); } else throw new Error("opción radio no encontrada");
+        if (i >= 0) { f.optionEls[i].click(); } else throw new Error(t("c_radio_not_found"));
       } else if (f.type === "checkbox") {
         const want = String(value).toLowerCase() === "true";
         if (f.el.checked !== want) f.el.click();
       } else if (f.type === "reactselect") {
         const done = await fillReactSelect(f.el, String(value));
-        if (!done) throw new Error("react-select no resuelto");
+        if (!done) throw new Error(t("c_reactselect_failed"));
       } else {
         continue; // file -> manual
       }
@@ -222,7 +222,7 @@ async function fill(answers) {
   const files = FIELD_MAP.filter((f) => f.type === "file");
   files.forEach((f) => {
     f.el.style.outline = "3px dashed #dd6b20";
-    details.push({ index: -1, label: f.label, status: "file", reason: "adjúntalo a mano (el navegador no deja por seguridad)" });
+    details.push({ index: -1, label: f.label, status: "file", reason: t("c_attach_manual") });
   });
   if (files.length) files[0].el.scrollIntoView({ block: "center" });
   return { ok, fail, files: files.length, details };
@@ -254,17 +254,19 @@ async function tryRevealForm() {
 
 // --------------------------------------------------------------- mensajería
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.action === "scan") {
-    let fields = scan();
-    if (fields.length) { sendResponse({ fields, pageText: pageText(), url: location.href }); return; }
-    // sin campos: intenta desplegar el form y reescanea
-    tryRevealForm().then(() => {
-      sendResponse({ fields: scan(), pageText: pageText(), url: location.href });
-    });
-    return true; // async
-  } else if (msg.action === "fill") {
-    fill(msg.answers).then((r) => sendResponse(r));
-    return true; // async
-  }
-  return true;
+  // Fija el idioma (para los motivos por campo) antes de escanear/rellenar.
+  (async () => {
+    await applyLangFromStore();
+    if (msg.action === "scan") {
+      let fields = scan();
+      if (!fields.length) {
+        await tryRevealForm(); // sin campos: intenta desplegar el form y reescanea
+        fields = scan();
+      }
+      sendResponse({ fields, pageText: pageText(), url: location.href });
+    } else if (msg.action === "fill") {
+      sendResponse(await fill(msg.answers));
+    }
+  })();
+  return true; // async
 });

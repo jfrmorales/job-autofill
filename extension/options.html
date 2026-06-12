@@ -16,36 +16,44 @@
   </style>
 </head>
 <body>
-  <h1>job-autofill · Ajustes</h1>
+  <h1 data-i18n="opts_title">job-autofill · Ajustes</h1>
 
-  <div class="warn">
+  <label for="lang" data-i18n="opts_lang_label">Idioma de la interfaz</label>
+  <select id="lang">
+    <option value="es">Español</option>
+    <option value="en">English</option>
+  </select>
+
+  <div class="warn" data-i18n-html="opts_keywarn">
     🔑 La API key se guarda solo en <b>este navegador</b> (chrome.storage.local) y se usa
     desde el background para llamar al proveedor que elijas. <b>No la compartas</b>. Si la
     expusiste en algún sitio, regénerala en el panel del proveedor.
   </div>
 
-  <label for="provider">Proveedor de IA</label>
+  <label for="provider" data-i18n="opts_provider_label">Proveedor de IA</label>
   <select id="provider"></select>
   <small id="providerHint"></small>
 
-  <label id="apiKeyLabel" for="apiKey">API key</label>
+  <label id="apiKeyLabel" for="apiKey" data-i18n="opts_apikey_label">API key</label>
   <input id="apiKey" type="password" autocomplete="off" />
 
   <div id="baseUrlRow" style="display:none">
-    <label for="baseUrl">Base URL del API</label>
+    <label for="baseUrl" data-i18n="opts_baseurl_label">Base URL del API</label>
     <input id="baseUrl" type="text" autocomplete="off" />
     <small id="baseUrlHint"></small>
   </div>
 
-  <label for="model">Modelo</label>
+  <label for="model" data-i18n="opts_model_label">Modelo</label>
   <select id="model"></select>
-  <input id="modelCustom" type="text" placeholder="id del modelo (p.ej. llama-3.3-70b)" autocomplete="off"
+  <input id="modelCustom" type="text" data-i18n-ph="opts_model_custom_ph"
+         placeholder="id del modelo (p.ej. llama-3.3-70b)" autocomplete="off"
          style="display:none; margin-top:8px;" />
-  <small>Cada proveedor trae modelos sugeridos; «Personalizado…» acepta cualquier id válido de
+  <small data-i18n="opts_model_help">Cada proveedor trae modelos sugeridos; «Personalizado…» acepta cualquier id válido de
   ese proveedor. Si agotas la cuota de un modelo, cambia a otro o de proveedor.</small>
 
   <div>
-    <button id="test" type="button" style="background:#4a5568; padding:8px 14px; font-size:13px">
+    <button id="test" type="button" data-i18n="opts_test_btn"
+            style="background:#4a5568; padding:8px 14px; font-size:13px">
       Probar conexión
     </button>
     <span id="testResult" style="margin-left:10px; font-size:13px"></span>
@@ -53,47 +61,49 @@
 
   <label id="fallbackRow" style="font-weight:400; margin-top:14px">
     <input id="fallback" type="checkbox" style="width:auto" />
-    Usar otros proveedores (con key) como respaldo si se agota la cuota (429)
+    <span data-i18n="opts_fallback_label">Usar otros proveedores (con key) como respaldo si se agota la cuota (429)</span>
   </label>
 
   <details style="margin-top:14px">
-    <summary style="cursor:pointer; font-weight:600">Opciones avanzadas</summary>
-    <label for="temperature">Temperatura (0–2)</label>
+    <summary style="cursor:pointer; font-weight:600" data-i18n="opts_advanced">Opciones avanzadas</summary>
+    <label for="temperature" data-i18n="opts_temp_label">Temperatura (0–2)</label>
     <input id="temperature" type="number" min="0" max="2" step="0.1" />
-    <small>Más baja = respuestas más deterministas. Por defecto 0.4.</small>
+    <small data-i18n="opts_temp_help">Más baja = respuestas más deterministas. Por defecto 0.4.</small>
 
-    <label for="maxTokens">Máx. tokens de salida</label>
+    <label for="maxTokens" data-i18n="opts_maxtok_label">Máx. tokens de salida</label>
     <input id="maxTokens" type="number" min="256" step="256" />
-    <small>Súbelo si las respuestas se cortan. Por defecto 8192.</small>
+    <small data-i18n="opts_maxtok_help">Súbelo si las respuestas se cortan. Por defecto 8192.</small>
 
     <label id="jsonModeRow" style="font-weight:400; display:none; margin-top:14px">
       <input id="jsonMode" type="checkbox" style="width:auto" />
-      Forzar modo JSON (<code>response_format</code>)
+      <span data-i18n-html="opts_jsonmode_label">Forzar modo JSON (<code>response_format</code>)</span>
     </label>
-    <small id="jsonModeHint" style="display:none">Mejora la fiabilidad del JSON, pero algunos
+    <small id="jsonModeHint" style="display:none" data-i18n="opts_jsonmode_help">Mejora la fiabilidad del JSON, pero algunos
     servidores compatibles lo rechazan: desactívalo si da error 400.</small>
   </details>
 
-  <label for="profile">Perfil (JSON)</label>
+  <label for="profile" data-i18n="opts_profile_label">Perfil (JSON)</label>
   <textarea id="profile"></textarea>
-  <small>Nombre, email, LinkedIn, salario, etc. Lo usa la IA para rellenar los campos.</small>
+  <small data-i18n="opts_profile_help">Nombre, email, LinkedIn, salario, etc. Lo usa la IA para rellenar los campos.</small>
 
-  <label for="cvFile">CV en PDF (para descargar/adjuntar rápido)</label>
+  <label for="cvFile" data-i18n="opts_cvfile_label">CV en PDF (para descargar/adjuntar rápido)</label>
   <input id="cvFile" type="file" accept=".pdf,.doc,.docx" />
-  <small id="cvFileInfo">El navegador no deja adjuntarlo por script, pero el popup te lo
+  <small id="cvFileInfo" data-i18n="opts_cvfile_help">El navegador no deja adjuntarlo por script, pero el popup te lo
   baja a Descargas con un clic para que solo tengas que seleccionarlo.</small>
   <div><small id="cvExtract"></small></div>
 
-  <label for="cvText">CV (texto plano)</label>
-  <textarea id="cvText" placeholder="Se rellena solo al adjuntar el PDF arriba; o pega aquí el texto…"></textarea>
-  <small>Al adjuntar un PDF arriba se extrae aquí automáticamente. La IA redacta cover letters
+  <label for="cvText" data-i18n="opts_cvtext_label">CV (texto plano)</label>
+  <textarea id="cvText" data-i18n-ph="opts_cvtext_ph"
+            placeholder="Se rellena solo al adjuntar el PDF arriba; o pega aquí el texto…"></textarea>
+  <small data-i18n="opts_cvtext_help">Al adjuntar un PDF arriba se extrae aquí automáticamente. La IA redacta cover letters
   y respuestas a partir de este texto, y rellena con él los campos de «Resume». Puedes editarlo.</small>
 
   <div>
-    <button id="save">Guardar</button>
+    <button id="save" data-i18n="opts_save">Guardar</button>
     <span id="saved"></span>
   </div>
   <script src="vendor/pdf.min.js"></script>
+  <script src="i18n.js"></script>
   <script src="providers.js"></script>
   <script src="options.js"></script>
 </body>

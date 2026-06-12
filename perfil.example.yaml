@@ -1,10 +1,20 @@
 # Plantilla de perfil. Cópiala a `perfil.yaml` y rellena tus datos:
+# Profile template. Copy it to `perfil.yaml` and fill in your data:
 #   cp perfil.example.yaml perfil.yaml
 # `perfil.yaml` está en .gitignore (no se versiona: contiene tus datos personales).
+# `perfil.yaml` is in .gitignore (not versioned: it holds your personal data).
 #
 # Lo determinista (nombre, email, CV, LinkedIn, salario, selects) se rellena
 # sin IA. Las preguntas abiertas (cover letter, "why this company") las redacta
 # la IA por oferta usando tu CV + la descripción.
+# Deterministic fields (name, email, CV, LinkedIn, salary, selects) are filled
+# without AI. Open questions (cover letter, "why this company") are drafted by
+# the AI per posting using your CV + the description.
+
+# Idioma de la interfaz del CLI: "es" o "en". Si lo quitas, se autodetecta del
+# sistema (o con --lang / la variable JOB_LANG). | CLI interface language: "es"
+# or "en". If omitted, it is auto-detected (or set with --lang / JOB_LANG).
+lang: es
 
 cv_path: ~/Downloads/TU_CV.pdf
 

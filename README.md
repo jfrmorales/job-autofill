@@ -1,9 +1,14 @@
 # job-autofill
 
+**Español** · [English](README.en.md)
+
 Semi-automatiza candidaturas de empleo. Lee la oferta y sus preguntas, prepara
 las respuestas (datos de tu perfil + IA para las abiertas), abre el formulario
 en un navegador, lo rellena y **para antes de enviar**: tú revisas y pulsas el
 botón de Enviar.
+
+La interfaz (CLI y extensión) está disponible en **español e inglés**, y puedes
+elegir el idioma (ver [Idioma](#idioma)).
 
 Soporta **Greenhouse, Lever, Ashby y Teamtailor** (los 4 cubren la mayoría de
 ofertas tech). Greenhouse y Lever van por API pública (robusto); Ashby y
@@ -21,6 +26,16 @@ cd ~/repositories/job-autofill
 teléfono, LinkedIn, salario, pitch). `perfil.yaml` **no se versiona** (lleva tus
 datos personales); en git solo vive la plantilla.
 
+## Idioma
+
+Toda la interfaz (CLI y extensión) está en **español e inglés**.
+
+- **CLI**: el idioma se resuelve por este orden: `--lang es|en` → variable
+  `JOB_LANG` → clave `lang:` de `perfil.yaml` → locale del sistema (`LANG`) →
+  inglés. Ejemplo: `python aplicar.py '<url>' --lang en`.
+- **Extensión**: selector **«Idioma de la interfaz»** en *Ajustes* (se guarda en
+  el navegador). Si no eliges, se autodetecta de `navigator.language`.
+
 ## Uso
 
 ```bash
@@ -28,6 +43,9 @@ source .venv/bin/activate
 
 # 1) Prepara la candidatura (detecta ATS, lee preguntas, prepara answers.json)
 python aplicar.py 'https://job-boards.greenhouse.io/pandadoc/jobs/7930491'
+
+# Fuerza el idioma de la interfaz (es / en); por defecto se autodetecta
+python aplicar.py '<url>' --lang en
 ```
 
 - Los datos directos (nombre, email, CV, LinkedIn, salario, work-authorization)

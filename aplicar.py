@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """job-autofill — semi-automatiza candidaturas (Greenhouse / Lever / Ashby / Teamtailor).
 
-Uso:
+Uso / Usage:
   python aplicar.py <url-oferta>            # lee la oferta, prepara respuestas, abre el navegador
   python aplicar.py <url-oferta> --fetch    # solo prepara runs/<...>/answers.json (sin navegador)
   python aplicar.py <url-oferta> --fill     # abre el navegador con answers.json (ya editado)
+  python aplicar.py ... --lang en           # idioma de la interfaz (es / en); autodetecta por defecto
 
 Siempre PARA antes de enviar: revisas y pulsas tú el botón.
+It always STOPS before submitting: you review and press the button yourself.
 """
 from __future__ import annotations
 import sys, os, json, argparse, urllib.request
@@ -18,6 +20,8 @@ import ats.greenhouse, ats.lever, ats.ashby, ats.teamtailor  # noqa: F401
 from ats.base import detect, all_adapters, Answer
 import generate
 import filler
+import i18n
+from i18n import t
 
 ROOT = Path(__file__).resolve().parent
 RUNS = ROOT / "runs"
@@ -43,7 +47,7 @@ def resolve(url):
     try:
         page_html = _get_html(url)
     except Exception as e:
-        print(f"No pude descargar la página: {e}")
+        print(t("download_failed", error=e))
         return None, None
     for a in all_adapters():
         sn = getattr(a, "sniff", None)
@@ -77,9 +81,9 @@ def load_answers(d: Path) -> dict:
 def do_fetch(url, profile):
     ad, ctx = resolve(url)
     if not ad:
-        print("✗ No reconozco el ATS de esa URL (Greenhouse/Lever/Ashby/Teamtailor).")
+        print(t("ats_unrecognized"))
         return None
-    print(f"✓ ATS detectado: {ad.name}")
+    print(t("ats_detected", name=ad.name))
     job = ad.fetch(ctx)
     answers, open_qs = generate.build_answers(job, profile)
 
@@ -93,25 +97,26 @@ def do_fetch(url, profile):
     (d / "job.json").write_text(json.dumps(job.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     save_answers(d, answers)
 
-    print(f"\n  Oferta : {job.title} @ {job.company}")
-    print(f"  Run dir: {d}")
+    print()
+    print(t("offer_line", title=job.title, company=job.company))
+    print(t("run_dir_line", path=d))
     pend = [q for q in open_qs if not answers[q.key].value]
     if pend:
-        print("\n  ✎ Preguntas abiertas SIN respuesta (rellénalas o pídeselas a Claude):")
+        print(t("open_questions_header"))
         for q in pend:
-            print(f"     - [{q.key}] {q.label}")
-        print(f"\n  Edita {d/'answers.json'} y luego:  python aplicar.py '{url}' --fill")
+            print(t("open_question_item", key=q.key, label=q.label))
+        print(t("edit_then_fill", path=d / 'answers.json', url=url))
     return ad, job, d, bool(pend)
 
 
 def do_fill(url, profile):
     ad, ctx = resolve(url)
     if not ad:
-        print("✗ ATS no reconocido."); return
+        print(t("ats_unrecognized_short")); return
     job = ad.fetch(ctx)
     d = run_dir(job)
     if not (d / "answers.json").exists():
-        print("✗ No hay answers.json; ejecuta primero sin --fill."); return
+        print(t("no_answers_file")); return
     answers = load_answers(d)
     filler.run_fill(ad, job, answers, profile, headed=True, run_path=d)
 
@@ -119,38 +124,47 @@ def do_fill(url, profile):
 def list_status():
     """Lista todas las candidaturas en runs/ y en qué estado quedó cada una."""
     if not RUNS.exists() or not any(RUNS.iterdir()):
-        print("No hay runs todavía."); return
+        print(t("no_runs")); return
     for d in sorted(RUNS.iterdir()):
         if not d.is_dir():
             continue
         st = d / "status.json"
         if st.exists():
             s = json.loads(st.read_text(encoding="utf-8"))
-            estado = s.get("state", "?")
-            print(f"  [{estado:5}] {d.name}: {s.get('ok', 0)} ok / {s.get('fail', 0)} fallos"
-                  f" · {s.get('finished_at', '')}"
-                  + (f" · ERROR: {s['error']}" if s.get("error") else ""))
+            err = t("status_error_suffix", error=s["error"]) if s.get("error") else ""
+            print(t("status_line", state=s.get("state", "?"), name=d.name,
+                    ok=s.get("ok", 0), fail=s.get("fail", 0),
+                    finished=s.get("finished_at", ""), error=err))
         elif (d / "answers.json").exists():
-            print(f"  [prep ] {d.name}: respuestas preparadas, sin rellenar aún")
+            print(t("status_prepared", name=d.name))
         else:
-            print(f"  [vacío] {d.name}: sin answers.json")
+            print(t("status_empty", name=d.name))
 
 
 def main():
-    p = argparse.ArgumentParser(description="Semi-automatiza candidaturas de empleo.")
-    p.add_argument("url", nargs="?", help="URL de la oferta")
-    p.add_argument("--fetch", action="store_true", help="solo preparar answers.json")
-    p.add_argument("--fill", action="store_true", help="abrir navegador con answers.json")
-    p.add_argument("--status", action="store_true", help="listar runs y su estado, y salir")
+    # Idioma temprano (para --help y mensajes previos al perfil): cli > env > sistema.
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--lang")
+    cli_lang = pre.parse_known_args()[0].lang
+    i18n.set_lang(i18n.detect_lang(cli=cli_lang))
+
+    p = argparse.ArgumentParser(description=t("cli_description"))
+    p.add_argument("url", nargs="?", help=t("help_url"))
+    p.add_argument("--fetch", action="store_true", help=t("help_fetch"))
+    p.add_argument("--fill", action="store_true", help=t("help_fill"))
+    p.add_argument("--status", action="store_true", help=t("help_status"))
+    p.add_argument("--lang", choices=i18n.LANGS, help=t("help_lang"))
     args = p.parse_args()
 
     if args.status:
         list_status()
         return
     if not args.url:
-        p.error("falta la URL de la oferta (o usa --status para ver el estado de los runs)")
+        p.error(t("err_need_url"))
 
     profile = load_profile()
+    # Reafina con la clave `lang:` del perfil (cli/env siguen teniendo prioridad).
+    i18n.set_lang(i18n.detect_lang(cli=args.lang, profile=profile))
 
     if args.fill:
         do_fill(args.url, profile)
@@ -161,7 +175,7 @@ def main():
         return
     ad, job, d, pend = res
     if pend and not os.environ.get("ANTHROPIC_API_KEY"):
-        print("\n→ Hay respuestas pendientes; no abro el navegador todavía.")
+        print(t("pending_no_browser"))
         return
     answers = load_answers(d)
     filler.run_fill(ad, job, answers, profile, headed=True, run_path=d)

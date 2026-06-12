@@ -1,8 +1,13 @@
 # job-autofill · extensión de navegador
 
+**Español** · [English](README.en.md)
+
 Rellena candidaturas de empleo **en cualquier ATS** con IA, directamente en la
 página donde ya estás logueado. Escanea el formulario, genera las respuestas y las
 rellena. **Nunca envía**: tú revisas, adjuntas el CV y pulsas Enviar.
+
+La interfaz está en **español e inglés**: elige idioma en el selector **«Idioma
+de la interfaz»** de *Ajustes* (si no, se autodetecta del navegador).
 
 Funciona con **varios proveedores de IA** (elige uno en *Ajustes*):
 - **Google** — Gemini / Gemma (Google AI Studio).
@@ -26,6 +31,7 @@ Cada proveedor guarda su propia API key, así que puedes alternar sin reescribir
 
 ## Configurar (una vez)
 Click derecho en el icono → *Opciones* (o botón **Ajustes** del popup):
+- **Idioma de la interfaz** — español o inglés (se guarda en el navegador).
 - **Proveedor de IA** — Google / OpenAI / Anthropic / compatible (personalizado).
 - **API key** — pega una key **nueva** del proveedor elegido (vacía para servidores
   locales como Ollama). Para «personalizado», indica también la **Base URL**.
