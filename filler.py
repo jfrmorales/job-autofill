@@ -8,13 +8,36 @@ Flujo "rellenar y revisar":
 """
 from __future__ import annotations
 import os
+import json
+import datetime
 from pathlib import Path
 
 PROFILE_DIR = Path(os.path.expanduser("~/.config/job-autofill/browser"))
 
+# Estado del registro de la ejecución en curso. run_fill() abre run.log y recoge
+# los eventos ✓/⚠ que emiten los adapters vía log(), para volcar status.json.
+_LOG = {"file": None, "events": []}
+
+
+def _now() -> str:
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
 
 def log(msg: str):
     print(msg, flush=True)
+    f = _LOG["file"]
+    if f:
+        try:
+            f.write(f"{_now()} {msg}\n")
+            f.flush()
+        except Exception:
+            pass
+    # clasifica para status.json a partir del prefijo que ya usan los adapters
+    s = msg.strip()
+    if s.startswith("✓"):
+        _LOG["events"].append({"level": "ok", "text": s.lstrip("✓ ").strip()})
+    elif s.startswith("⚠"):
+        _LOG["events"].append({"level": "warn", "text": s.lstrip("⚠ ").strip()})
 
 
 # --------------------------------------------------------------- helpers fill
@@ -72,8 +95,16 @@ def choose_select(page, q, label: str):
 
 
 # ----------------------------------------------------------------- driver
-def run_fill(adapter, job, answers: dict, profile: dict, headed: bool = True):
+def run_fill(adapter, job, answers: dict, profile: dict, headed: bool = True, run_path=None):
     from playwright.sync_api import sync_playwright
+
+    started = _now()
+    error = None
+    if run_path:
+        run_path = Path(run_path)
+        _LOG["file"] = open(run_path / "run.log", "a", encoding="utf-8")
+        _LOG["events"] = []
+        log(f"── relleno: {job.title} @ {job.company} ({started})")
 
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
@@ -88,6 +119,7 @@ def run_fill(adapter, job, answers: dict, profile: dict, headed: bool = True):
         try:
             adapter.fill(page, job, answers, profile)
         except Exception as e:
+            error = str(e)
             log(f"⚠ error rellenando: {e}")
 
         log("\n" + "=" * 64)
@@ -99,3 +131,24 @@ def run_fill(adapter, job, answers: dict, profile: dict, headed: bool = True):
         except (EOFError, KeyboardInterrupt):
             pass
         ctx.close()
+
+    if run_path:
+        ok = sum(1 for e in _LOG["events"] if e["level"] == "ok")
+        fail = sum(1 for e in _LOG["events"] if e["level"] == "warn")
+        status = {
+            "state": "error" if error else "done",
+            "started_at": started,
+            "finished_at": _now(),
+            "ok": ok,
+            "fail": fail,
+            "error": error,
+            "events": _LOG["events"],
+        }
+        (run_path / "status.json").write_text(
+            json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+        log(f"→ Registro: {run_path / 'run.log'} · estado: {run_path / 'status.json'}")
+        try:
+            _LOG["file"].close()
+        except Exception:
+            pass
+        _LOG["file"] = None

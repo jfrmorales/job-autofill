@@ -1,8 +1,18 @@
 # job-autofill · extensión de navegador
 
-Rellena candidaturas de empleo **en cualquier ATS** con IA (Gemini 3.5 Flash),
-directamente en la página donde ya estás logueado. Escanea el formulario, genera
-las respuestas y las rellena. **Nunca envía**: tú revisas, adjuntas el CV y pulsas Enviar.
+Rellena candidaturas de empleo **en cualquier ATS** con IA, directamente en la
+página donde ya estás logueado. Escanea el formulario, genera las respuestas y las
+rellena. **Nunca envía**: tú revisas, adjuntas el CV y pulsas Enviar.
+
+Funciona con **varios proveedores de IA** (elige uno en *Ajustes*):
+- **Google** — Gemini / Gemma (Google AI Studio).
+- **OpenAI** — GPT-4o / GPT-4.1…
+- **Anthropic** — Claude (Haiku / Sonnet / Opus).
+- **Compatible con OpenAI (personalizado)** — pega una *Base URL* y cubre
+  OpenRouter, Groq, Together, Mistral, DeepSeek, xAI, y modelos **locales** como
+  Ollama o LM Studio (`http://localhost:11434/v1`, sin API key).
+
+Cada proveedor guarda su propia API key, así que puedes alternar sin reescribirlas.
 
 ## Instalar (modo desarrollador)
 
@@ -16,9 +26,23 @@ las respuestas y las rellena. **Nunca envía**: tú revisas, adjuntas el CV y pu
 
 ## Configurar (una vez)
 Click derecho en el icono → *Opciones* (o botón **Ajustes** del popup):
-- **API key de Gemini** — pega una key **nueva** de Google AI Studio.
+- **Proveedor de IA** — Google / OpenAI / Anthropic / compatible (personalizado).
+- **API key** — pega una key **nueva** del proveedor elegido (vacía para servidores
+  locales como Ollama). Para «personalizado», indica también la **Base URL**.
+- **Modelo** — elige uno de los sugeridos o escribe un id propio. Los modelos de
+  razonamiento de OpenAI (`o4-mini`, `o3`…) se detectan y se llaman con los
+  parámetros correctos automáticamente.
+- **Probar conexión** — hace una petición mínima y te dice si la key, el modelo y
+  el endpoint funcionan (sin tener que guardar ni lanzar una candidatura).
+- **Respaldo (429)** — si lo activas y el proveedor agota cuota, prueba
+  automáticamente con los otros proveedores que tengan API key configurada.
+- **Opciones avanzadas** — temperatura, máx. tokens y modo JSON (desactívalo si un
+  servidor compatible devuelve error 400 con `response_format`).
 - **Perfil (JSON)** — viene prerrellenado con tus datos; completa salario y teléfono.
 - **CV (texto)** — pega el texto de tu CV (la IA redacta cover letters desde aquí).
+
+Al guardar un proveedor **personalizado**, el navegador pedirá permiso de red para
+ese dominio (la extensión solo trae permiso fijo para Google, OpenAI y Anthropic).
 
 ## Usar
 1. Abre la oferta y ve a su formulario (pulsa *Apply* si hace falta).
@@ -53,10 +77,13 @@ Aunque el navegador no deja adjuntar el fichero por script, el popup te lo deja 
 - Carga tu PDF y pega el texto una vez en *Ajustes*; quedan guardados de forma permanente.
 
 ## Privacidad / seguridad
-- La key y el perfil se guardan solo en `chrome.storage.local` de **tu** navegador.
-- La key **no está en el código** (no acaba en git). La llamada a Gemini sale del
+- Las keys (una por proveedor) y el perfil se guardan solo en `chrome.storage.local`
+  de **tu** navegador.
+- La key **no está en el código** (no acaba en git). La llamada al proveedor sale del
   *service worker*, no de la página, así el sitio web nunca la ve.
 - El content script es **pasivo**: solo lee la página cuando pulsas el botón.
+- Solo se permiten por defecto los dominios de Google, OpenAI y Anthropic; cualquier
+  *Base URL* personalizada requiere que tú concedas el permiso de red al guardar.
 
 ## vs. la versión Python (`../`)
 - **Extensión**: cualquier ATS, usa tus logins, no sube el CV. Mejor para el día a día.

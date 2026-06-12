@@ -113,15 +113,42 @@ def do_fill(url, profile):
     if not (d / "answers.json").exists():
         print("✗ No hay answers.json; ejecuta primero sin --fill."); return
     answers = load_answers(d)
-    filler.run_fill(ad, job, answers, profile, headed=True)
+    filler.run_fill(ad, job, answers, profile, headed=True, run_path=d)
+
+
+def list_status():
+    """Lista todas las candidaturas en runs/ y en qué estado quedó cada una."""
+    if not RUNS.exists() or not any(RUNS.iterdir()):
+        print("No hay runs todavía."); return
+    for d in sorted(RUNS.iterdir()):
+        if not d.is_dir():
+            continue
+        st = d / "status.json"
+        if st.exists():
+            s = json.loads(st.read_text(encoding="utf-8"))
+            estado = s.get("state", "?")
+            print(f"  [{estado:5}] {d.name}: {s.get('ok', 0)} ok / {s.get('fail', 0)} fallos"
+                  f" · {s.get('finished_at', '')}"
+                  + (f" · ERROR: {s['error']}" if s.get("error") else ""))
+        elif (d / "answers.json").exists():
+            print(f"  [prep ] {d.name}: respuestas preparadas, sin rellenar aún")
+        else:
+            print(f"  [vacío] {d.name}: sin answers.json")
 
 
 def main():
     p = argparse.ArgumentParser(description="Semi-automatiza candidaturas de empleo.")
-    p.add_argument("url", help="URL de la oferta")
+    p.add_argument("url", nargs="?", help="URL de la oferta")
     p.add_argument("--fetch", action="store_true", help="solo preparar answers.json")
     p.add_argument("--fill", action="store_true", help="abrir navegador con answers.json")
+    p.add_argument("--status", action="store_true", help="listar runs y su estado, y salir")
     args = p.parse_args()
+
+    if args.status:
+        list_status()
+        return
+    if not args.url:
+        p.error("falta la URL de la oferta (o usa --status para ver el estado de los runs)")
 
     profile = load_profile()
 
@@ -137,7 +164,7 @@ def main():
         print("\n→ Hay respuestas pendientes; no abro el navegador todavía.")
         return
     answers = load_answers(d)
-    filler.run_fill(ad, job, answers, profile, headed=True)
+    filler.run_fill(ad, job, answers, profile, headed=True, run_path=d)
 
 
 if __name__ == "__main__":

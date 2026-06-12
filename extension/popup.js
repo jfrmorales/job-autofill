@@ -13,6 +13,72 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "progress") status(msg.text);
 });
 
+// --- Estado persistente de la última ejecución -------------------------------
+// El popup se destruye al cerrarse; el estado real vive en chrome.storage.local
+// (lo escribe el service worker). Lo leemos al abrir y nos refrescamos en vivo.
+const fmtTime = (ts) => new Date(ts).toLocaleTimeString();
+
+async function renderLastRun() {
+  const { lastRun, runLog } = await chrome.storage.local.get(["lastRun", "runLog"]);
+  const last = $("last");
+  if (!lastRun || !lastRun.state) {
+    last.innerHTML = "";
+  } else {
+    let head, color;
+    if (lastRun.state === "running") {
+      head = `⏳ En curso desde ${fmtTime(lastRun.startedAt)}…`; color = "#2b6cb0";
+    } else if (lastRun.state === "error") {
+      head = `✗ Error (${fmtTime(lastRun.finishedAt)}): ${lastRun.error || ""}`; color = "#c53030";
+    } else {
+      const r = lastRun.result || {};
+      head = `✓ Terminado ${fmtTime(lastRun.finishedAt)} — ${r.ok || 0} ok` +
+        (r.fail ? `, ${r.fail} fallo(s)` : "") + (r.files ? `, ${r.files} fichero` : "");
+      color = "#2f855a";
+    }
+    let rows = "";
+    for (const d of (lastRun.result?.details || [])) {
+      const icon = d.status === "ok" ? "✓" : d.status === "fail" ? "✗" : d.status === "file" ? "⬇" : "·";
+      const col = d.status === "ok" ? "#2f855a" : d.status === "fail" ? "#c53030"
+        : d.status === "file" ? "#c05621" : "#718096";
+      const tail = d.reason ? ` — ${d.reason}` : "";
+      rows += `<div style="color:${col}">${icon} ${escapeHtml(d.label)}${escapeHtml(tail)}</div>`;
+    }
+    last.innerHTML = `<div class="head" style="color:${color}">${escapeHtml(head)}</div>` +
+      (rows ? `<div class="fields">${rows}</div>` : "");
+  }
+  const lines = (runLog || []).map((e) => {
+    const mark = e.level === "error" ? "✗" : e.level === "warn" ? "⚠" : e.level === "ok" ? "✓" : "·";
+    return `${fmtTime(e.ts)} ${mark} ${e.text}`;
+  });
+  $("log").textContent = lines.join("\n");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+// refresco en vivo: cuando el SW actualiza el estado, repintamos
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && (changes.lastRun || changes.runLog)) renderLastRun();
+});
+
+$("togglelog").onclick = () => {
+  const l = $("log");
+  const show = l.style.display === "none";
+  l.style.display = show ? "block" : "none";
+  $("togglelog").textContent = show ? "Ocultar registro" : "Ver registro";
+};
+
+$("copylog").onclick = async () => {
+  const { runLog } = await chrome.storage.local.get("runLog");
+  const txt = (runLog || []).map((e) => `${new Date(e.ts).toISOString()} [${e.level}] ${e.text}`).join("\n");
+  if (!txt) { status("No hay registro todavía."); return; }
+  try { await navigator.clipboard.writeText(txt); status("📋 Registro copiado al portapapeles."); }
+  catch { status("No pude copiar el registro (permiso de portapapeles)."); }
+};
+
+renderLastRun();
+
 $("scan").onclick = async () => {
   try {
     const tab = await activeTab();
@@ -69,7 +135,13 @@ $("cvcopy").onclick = async () => {
 
 $("opts").onclick = () => chrome.runtime.openOptionsPage();
 
-// aviso si falta config
-chrome.storage.local.get(["apiKey", "profile"]).then(({ apiKey, profile }) => {
-  if (!apiKey || !profile) status("⚙ Configura tu API key y perfil en «Ajustes» primero.");
+// aviso si falta config (proveedor + key + modelo válidos, y perfil)
+chrome.storage.local.get(
+  ["provider", "apiKeys", "apiKey", "model", "customBaseUrl", "jsonMode", "profile"]
+).then((s) => {
+  let configOk = true;
+  try { resolveProviderConfig(s); } catch { configOk = false; }
+  if (!configOk || !s.profile) {
+    status("⚙ Configura proveedor, API key y perfil en «Ajustes» primero.");
+  }
 });

@@ -2,9 +2,14 @@
   "manifest_version": 3,
   "name": "job-autofill",
   "version": "0.1.0",
-  "description": "Rellena candidaturas de empleo con IA (Gemini 3.5 Flash). Tú revisas y envías.",
+  "description": "Rellena candidaturas de empleo con IA (Google, OpenAI, Anthropic o cualquier API compatible). Tú revisas y envías.",
   "permissions": ["storage", "activeTab", "scripting", "downloads", "webNavigation"],
-  "host_permissions": ["https://generativelanguage.googleapis.com/*"],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*"
+  ],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
   "background": { "service_worker": "background.js" },
   "action": {
     "default_popup": "popup.html",
@@ -20,6 +25,6 @@
     }
   ],
   "browser_specific_settings": {
-    "gecko": { "id": "job-autofill@jfrmorales", "strict_min_version": "115.0" }
+    "gecko": { "id": "job-autofill@jfrmorales", "strict_min_version": "116.0" }
   }
 }

@@ -107,6 +107,7 @@ function scan() {
 function push(out, internal, meta) {
   if (!meta.label) return;
   const index = FIELD_MAP.length;
+  internal.label = meta.label; // guardamos la etiqueta para poder reportar por campo en fill()
   FIELD_MAP.push(internal);
   out.push({ index, required: !!internal.el.required, name: internal.el.name || "", ...meta });
 }
@@ -168,9 +169,18 @@ async function fillReactSelect(controlEl, value) {
 
 async function fill(answers) {
   let ok = 0, fail = 0;
+  const details = []; // {index, label, status: ok|fail|skip|file, reason?, value?}
   for (const [idxStr, value] of Object.entries(answers)) {
-    const f = FIELD_MAP[Number(idxStr)];
-    if (!f || value === "" || value == null) continue;
+    const idx = Number(idxStr);
+    const f = FIELD_MAP[idx];
+    if (!f) {
+      details.push({ index: idx, label: "(campo no encontrado)", status: "fail", reason: "índice fuera del formulario escaneado" });
+      fail++; continue;
+    }
+    if (value === "" || value == null) {
+      details.push({ index: idx, label: f.label, status: "skip", reason: "la IA no devolvió valor" });
+      continue;
+    }
     try {
       if (f.type === "text" || f.type === "textarea") {
         f.el.scrollIntoView({ block: "center" });
@@ -201,16 +211,21 @@ async function fill(answers) {
       }
       f.el.style.outline = "2px solid #38a169";
       ok++;
+      details.push({ index: idx, label: f.label, status: "ok", value: String(value).slice(0, 80) });
     } catch (e) {
       f.el.style.outline = "2px solid #e53e3e";
       fail++;
+      details.push({ index: idx, label: f.label, status: "fail", reason: String(e.message || e), value: String(value).slice(0, 80) });
     }
   }
   // resalta los campos de subir fichero (hay que adjuntarlos a mano) y baja al primero
   const files = FIELD_MAP.filter((f) => f.type === "file");
-  files.forEach((f) => { f.el.style.outline = "3px dashed #dd6b20"; });
+  files.forEach((f) => {
+    f.el.style.outline = "3px dashed #dd6b20";
+    details.push({ index: -1, label: f.label, status: "file", reason: "adjúntalo a mano (el navegador no deja por seguridad)" });
+  });
   if (files.length) files[0].el.scrollIntoView({ block: "center" });
-  return { ok, fail, files: files.length };
+  return { ok, fail, files: files.length, details };
 }
 
 function pageText() {

@@ -20,43 +20,81 @@
 
   <div class="warn">
     🔑 La API key se guarda solo en <b>este navegador</b> (chrome.storage.local) y se usa
-    desde el background para llamar a la API de Google. <b>No la compartas</b>. Si la expusiste
-    en algún sitio, regénerala en Google AI Studio.
+    desde el background para llamar al proveedor que elijas. <b>No la compartas</b>. Si la
+    expusiste en algún sitio, regénerala en el panel del proveedor.
   </div>
 
-  <label for="apiKey">API key de Google (Gemini / Gemma)</label>
-  <input id="apiKey" type="password" placeholder="AIza… / AQ…" autocomplete="off" />
+  <label for="provider">Proveedor de IA</label>
+  <select id="provider"></select>
+  <small id="providerHint"></small>
+
+  <label id="apiKeyLabel" for="apiKey">API key</label>
+  <input id="apiKey" type="password" autocomplete="off" />
+
+  <div id="baseUrlRow" style="display:none">
+    <label for="baseUrl">Base URL del API</label>
+    <input id="baseUrl" type="text" autocomplete="off" />
+    <small id="baseUrlHint"></small>
+  </div>
 
   <label for="model">Modelo</label>
-  <select id="model">
-    <option value="gemini-3.5-flash">Gemini 3.5 Flash (rápido)</option>
-    <option value="gemma-4-26b-a4b-it">Gemma 4 26B (abierto, MoE rápido)</option>
-    <option value="gemma-4-31b-it">Gemma 4 31B (abierto, el más grande)</option>
-    <option value="__custom__">Personalizado…</option>
-  </select>
-  <input id="modelCustom" type="text" placeholder="otro-id-de-modelo" autocomplete="off"
+  <select id="model"></select>
+  <input id="modelCustom" type="text" placeholder="id del modelo (p.ej. llama-3.3-70b)" autocomplete="off"
          style="display:none; margin-top:8px;" />
-  <small>Si agotas la cuota de un modelo, cambia a otro. Los <code>gemma-*</code> son modelos
-  abiertos con cuota propia. «Personalizado…» acepta cualquier ID válido de la API de Google.</small>
+  <small>Cada proveedor trae modelos sugeridos; «Personalizado…» acepta cualquier id válido de
+  ese proveedor. Si agotas la cuota de un modelo, cambia a otro o de proveedor.</small>
+
+  <div>
+    <button id="test" type="button" style="background:#4a5568; padding:8px 14px; font-size:13px">
+      Probar conexión
+    </button>
+    <span id="testResult" style="margin-left:10px; font-size:13px"></span>
+  </div>
+
+  <label id="fallbackRow" style="font-weight:400; margin-top:14px">
+    <input id="fallback" type="checkbox" style="width:auto" />
+    Usar otros proveedores (con key) como respaldo si se agota la cuota (429)
+  </label>
+
+  <details style="margin-top:14px">
+    <summary style="cursor:pointer; font-weight:600">Opciones avanzadas</summary>
+    <label for="temperature">Temperatura (0–2)</label>
+    <input id="temperature" type="number" min="0" max="2" step="0.1" />
+    <small>Más baja = respuestas más deterministas. Por defecto 0.4.</small>
+
+    <label for="maxTokens">Máx. tokens de salida</label>
+    <input id="maxTokens" type="number" min="256" step="256" />
+    <small>Súbelo si las respuestas se cortan. Por defecto 8192.</small>
+
+    <label id="jsonModeRow" style="font-weight:400; display:none; margin-top:14px">
+      <input id="jsonMode" type="checkbox" style="width:auto" />
+      Forzar modo JSON (<code>response_format</code>)
+    </label>
+    <small id="jsonModeHint" style="display:none">Mejora la fiabilidad del JSON, pero algunos
+    servidores compatibles lo rechazan: desactívalo si da error 400.</small>
+  </details>
 
   <label for="profile">Perfil (JSON)</label>
   <textarea id="profile"></textarea>
   <small>Nombre, email, LinkedIn, salario, etc. Lo usa la IA para rellenar los campos.</small>
 
-  <label for="cvText">CV (texto plano)</label>
-  <textarea id="cvText" placeholder="Pega aquí el texto de tu CV…"></textarea>
-  <small>Pega el contenido de tu CV. La IA redacta cover letters y respuestas a partir de
-  aquí, y rellena con esto los campos de «Resume» en texto.</small>
-
   <label for="cvFile">CV en PDF (para descargar/adjuntar rápido)</label>
   <input id="cvFile" type="file" accept=".pdf,.doc,.docx" />
   <small id="cvFileInfo">El navegador no deja adjuntarlo por script, pero el popup te lo
   baja a Descargas con un clic para que solo tengas que seleccionarlo.</small>
+  <div><small id="cvExtract"></small></div>
+
+  <label for="cvText">CV (texto plano)</label>
+  <textarea id="cvText" placeholder="Se rellena solo al adjuntar el PDF arriba; o pega aquí el texto…"></textarea>
+  <small>Al adjuntar un PDF arriba se extrae aquí automáticamente. La IA redacta cover letters
+  y respuestas a partir de este texto, y rellena con él los campos de «Resume». Puedes editarlo.</small>
 
   <div>
     <button id="save">Guardar</button>
     <span id="saved"></span>
   </div>
+  <script src="vendor/pdf.min.js"></script>
+  <script src="providers.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

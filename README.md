@@ -44,6 +44,30 @@ python aplicar.py '<misma-url>' --fill   # abre el navegador con tus respuestas
 El navegador es **persistente** (`~/.config/job-autofill/browser`): mantiene tus
 logins (LinkedIn, Google) entre ofertas.
 
+### Saber en qué estado quedó cada candidatura
+
+```bash
+python aplicar.py --status      # lista todos los runs y su estado
+```
+
+Cada relleno deja un rastro en su carpeta `runs/<oferta>/`:
+
+- `run.log` — cada paso con timestamp y cada campo (`✓`/`⚠ motivo`).
+- `status.json` — estado final (`done`/`error`), nº de campos ok/fallidos y el
+  error si lo hubo.
+
+## Extensión de navegador
+
+La extensión (`extension/`) hace lo mismo en la página actual con un modelo de
+Google. En *Ajustes*, al adjuntar tu **CV en PDF** se extrae el texto
+automáticamente (con pdf.js, en `extension/vendor/`) y rellena «CV (texto
+plano)»; ese texto es el que usa la IA. Todo el proceso (escanear → generar →
+rellenar) deja **registro
+persistente**: abre el popup y verás el resultado de la última ejecución (estado,
+y cada campo en verde/rojo con el motivo del fallo), aunque hayas cerrado el
+popup. Botón **«Ver registro»** para el log completo y **«Copiar registro»** para
+pegármelo si algo falla.
+
 ## Generar respuestas IA sin API key (vía Claude Code)
 
 ```bash

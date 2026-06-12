@@ -6,13 +6,15 @@ Dos fuentes:
   2. IA (por oferta): redacta las preguntas abiertas (cover letter, "why this
      company"...) usando tu CV + la descripción de la oferta.
 
-Si hay ANTHROPIC_API_KEY -> genera la parte IA automáticamente.
-Si no -> deja esas respuestas en blanco y vuelca un prompt para que las
-redacte Claude Code y las escriba en answers.json.
+Si hay un proveedor de IA configurado (key de Anthropic/OpenAI/Google o sección
+`ai:` en perfil.yaml) -> genera la parte IA automáticamente. Si no -> deja esas
+respuestas en blanco para revisarlas a mano. Ver providers.py para los
+proveedores soportados y cómo configurarlos.
 """
 from __future__ import annotations
 import os
 from ats.base import Job, Question, Answer, TEXT, TEXTAREA, FILE, SELECT, MULTISELECT
+from providers import resolve_ai_config, call_provider, AIConfigError
 
 
 # --------------------------------------------------------------- CV -> texto
@@ -134,22 +136,22 @@ No inventes EXPERIENCIA que no esté en el CV.
 
 
 def ia_generate(job: Job, profile: dict, open_qs: list[Question], cv_text: str):
-    """Genera respuestas IA si hay API key. Devuelve dict[key->texto] o {} si no."""
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key or not open_qs:
+    """Genera respuestas IA si hay un proveedor configurado. Devuelve
+    dict[key->texto] o {} si no hay IA o falla."""
+    if not open_qs:
         return {}
     try:
-        import anthropic, json
-        client = anthropic.Anthropic(api_key=key)
-        msg = client.messages.create(
-            model="claude-opus-4-8",
-            max_tokens=2000,
-            messages=[{"role": "user",
-                       "content": ia_prompt(job, profile, open_qs, cv_text) +
-                       "\n\nDevuelve únicamente el JSON, sin texto adicional."}],
-        )
-        txt = msg.content[0].text.strip()
+        cfg = resolve_ai_config(profile)
+    except AIConfigError as e:
+        print(f"⚠ IA no configurada ({e}); deja las abiertas en blanco")
+        return {}
+    try:
+        import json
+        prompt = (ia_prompt(job, profile, open_qs, cv_text) +
+                  "\n\nDevuelve únicamente el JSON, sin texto adicional.")
+        txt = call_provider(cfg, prompt).strip()
         txt = txt[txt.find("{"): txt.rfind("}") + 1]
+        print(f"  IA: {cfg['P']['label']} · {cfg['model']}")
         return json.loads(txt)
     except Exception as e:
         print(f"⚠ IA no disponible ({e}); deja las abiertas en blanco")
