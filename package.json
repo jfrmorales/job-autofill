@@ -1,0 +1,8 @@
+{
+  "name": "job-autofill",
+  "private": true,
+  "description": "Tests de la extensión (Node) — la lógica vive en extension/",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}

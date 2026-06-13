@@ -16,7 +16,7 @@ import os
 import i18n
 from i18n import t
 from ats.base import Job, Question, Answer, TEXT, TEXTAREA, FILE, SELECT, MULTISELECT
-from providers import resolve_ai_config, call_provider, AIConfigError
+from providers import resolve_ai_config, call_provider, extract_json_object, AIConfigError
 
 
 # --------------------------------------------------------------- CV -> texto
@@ -175,15 +175,13 @@ def ia_generate(job: Job, profile: dict, open_qs: list[Question], cv_text: str):
         print(t("ai_not_configured", error=e))
         return {}
     try:
-        import json
         json_only = ("\n\nDevuelve únicamente el JSON, sin texto adicional."
                      if i18n.lang() == "es"
                      else "\n\nReturn only the JSON, with no extra text.")
         prompt = ia_prompt(job, profile, open_qs, cv_text) + json_only
-        txt = call_provider(cfg, prompt).strip()
-        txt = txt[txt.find("{"): txt.rfind("}") + 1]
+        data = extract_json_object(call_provider(cfg, prompt))
         print(t("ai_using", label=cfg['P']['label'], model=cfg['model']))
-        return json.loads(txt)
+        return data
     except Exception as e:
         print(t("ai_unavailable", error=e))
         return {}

@@ -62,6 +62,17 @@ python aplicar.py '<same-url>' --fill   # opens the browser with your answers
 The browser is **persistent** (`~/.config/job-autofill/browser`): it keeps your
 logins (LinkedIn, Google) across postings.
 
+### Configuring the AI
+
+It defaults to **Anthropic (Claude)**, but supports **Google (Gemini/Gemma),
+OpenAI and any OpenAI-compatible API** (OpenRouter, Groq, local Ollama…). Configure
+it via environment variables (`JOB_AI_PROVIDER`, `JOB_AI_MODEL`, `JOB_AI_BASE_URL`,
+the provider's API key) or the `ai:` section of `perfil.yaml` (see
+`perfil.example.yaml`). Calls are **streamed** and the timeout is an **inactivity**
+one between tokens (`JOB_AI_TIMEOUT` or `ai.timeout`, default 180 s), not a total
+cap: raise it for slow models (e.g. Gemma) and they won't be cut off while they keep
+generating.
+
 ### Check the state of each application
 
 ```bash
@@ -103,6 +114,17 @@ python aplicar.py '<url>' --fill
 | `filler.py` | headed Playwright driver; fills and stops before submitting |
 | `perfil.yaml` | your data |
 | `runs/` | one folder per posting with `job.json` + `answers.json` |
+
+## Tests
+
+```bash
+.venv/bin/python -m unittest discover -s tests -p "test_*.py"   # CLI (providers)
+node --test tests/*.test.js                                     # extension
+```
+
+They cover the delicate logic: each provider's SSE streaming parser, config
+resolution (incl. the inactivity timeout), JSON extraction, failover on timeout,
+react-select dedup and number normalization.
 
 ## Limits
 

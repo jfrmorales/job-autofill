@@ -151,7 +151,7 @@ $("lang").onchange = async () => {
 
   const s = await chrome.storage.local.get(
     ["provider", "model", "apiKeys", "apiKey", "customBaseUrl", "jsonMode", "fallback",
-     "temperature", "maxTokens", "profile", "cvText", "cvFileName"]);
+     "temperature", "maxTokens", "timeoutSecs", "profile", "cvText", "cvFileName"]);
 
   // compat: versiones antiguas guardaban una sola `apiKey` (era de Google)
   state.keys = s.apiKeys || (s.apiKey ? { google: s.apiKey } : {});
@@ -163,6 +163,7 @@ $("lang").onchange = async () => {
 
   $("temperature").value = typeof s.temperature === "number" ? s.temperature : 0.4;
   $("maxTokens").value = s.maxTokens || 8192;
+  $("timeoutSecs").value = s.timeoutSecs || 180;
   $("fallback").checked = !!s.fallback;
 
   switchProvider(provider);
@@ -238,11 +239,12 @@ function showSaved(text, color) {
   if (color === "#2f855a") setTimeout(() => ($("saved").textContent = ""), 2000);
 }
 
-// Lee y normaliza temperatura y máx. tokens de las opciones avanzadas.
+// Lee y normaliza temperatura, máx. tokens y timeout de las opciones avanzadas.
 function readAdvanced() {
   return {
     temperature: Math.min(2, Math.max(0, parseFloat($("temperature").value)) || 0.4),
     maxTokens: Math.max(256, parseInt($("maxTokens").value, 10) || 8192),
+    timeoutSecs: Math.max(10, parseInt($("timeoutSecs").value, 10) || 180),
   };
 }
 
@@ -266,6 +268,7 @@ function buildStore(showErr) {
     fallback: $("fallback").checked,
     temperature: adv.temperature,
     maxTokens: adv.maxTokens,
+    timeoutSecs: adv.timeoutSecs,
   };
 }
 

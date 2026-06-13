@@ -62,6 +62,17 @@ python aplicar.py '<misma-url>' --fill   # abre el navegador con tus respuestas
 El navegador es **persistente** (`~/.config/job-autofill/browser`): mantiene tus
 logins (LinkedIn, Google) entre ofertas.
 
+### Configurar la IA
+
+Por defecto usa **Anthropic (Claude)**, pero soporta **Google (Gemini/Gemma),
+OpenAI y cualquier API compatible con OpenAI** (OpenRouter, Groq, Ollama local…).
+Se configura por variables de entorno (`JOB_AI_PROVIDER`, `JOB_AI_MODEL`,
+`JOB_AI_BASE_URL`, la API key del proveedor) o en la sección `ai:` de `perfil.yaml`
+(ver `perfil.example.yaml`). Las llamadas se hacen en **streaming** y el timeout es
+de **inactividad** entre tokens (`JOB_AI_TIMEOUT` o `ai.timeout`, por defecto 180 s),
+no un tope total: súbelo para modelos lentos (p.ej. Gemma) y no se cortarán mientras
+sigan generando.
+
 ### Saber en qué estado quedó cada candidatura
 
 ```bash
@@ -104,6 +115,17 @@ python aplicar.py '<url>' --fill
 | `filler.py` | driver Playwright headed; rellena y para antes de enviar |
 | `perfil.yaml` | tus datos |
 | `runs/` | una carpeta por oferta con `job.json` + `answers.json` |
+
+## Tests
+
+```bash
+.venv/bin/python -m unittest discover -s tests -p "test_*.py"   # CLI (providers)
+node --test tests/*.test.js                                     # extensión
+```
+
+Cubren la lógica delicada: parseo del streaming SSE de cada proveedor, resolución
+de config (incl. timeout de inactividad), extracción de JSON, failover por
+timeout, dedup de react-select y normalización de números.
 
 ## Límites
 

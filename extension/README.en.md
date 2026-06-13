@@ -41,10 +41,14 @@ Right-click the icon → *Options* (or the **Settings** button in the popup):
   parameters automatically.
 - **Test connection** — makes a minimal request and tells you whether the key,
   model and endpoint work (no need to save or launch an application).
-- **Fallback (429)** — if enabled and the provider runs out of quota, it
-  automatically tries the other providers that have an API key configured.
-- **Advanced options** — temperature, max tokens and JSON mode (turn it off if a
-  compatible server returns a 400 error with `response_format`).
+- **Fallback (429)** — if enabled and the provider fails due to exhausted quota
+  (429), a server error (5xx) or a **timeout** (the model stalls), it automatically
+  tries the other providers that have an API key configured.
+- **Advanced options** — temperature, max tokens, **per-request timeout** and JSON
+  mode (turn it off if a compatible server returns a 400 error with `response_format`).
+  The timeout is an **inactivity** one (default 180 s): the response is *streamed* and
+  the request stays alive as long as tokens keep arriving; it only aborts if the model
+  goes silent for that long. Raise it for slow models (e.g. Gemma).
 - **Profile (JSON)** — comes pre-filled with your data; complete salary and phone.
 - **CV (text)** — paste the text of your CV (the AI drafts cover letters from here).
 

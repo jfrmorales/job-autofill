@@ -119,6 +119,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "missing_model": "missing model for {label}",
         "missing_base_url": "missing base_url for the custom provider",
         "provider_retry": "  ⚠ {model}: {status}; retry {n}/{total} in {wait:g}s…",
+        "provider_empty": "empty response from {model}",
+        "provider_no_json": "the response did not contain JSON. It started with: {start}",
         # ats adapters
         "fill_field_failed": "couldn't fill «{label}»: {error}",
     },
@@ -170,6 +172,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "missing_model": "falta el modelo de {label}",
         "missing_base_url": "falta la base_url del proveedor personalizado",
         "provider_retry": "  ⚠ {model}: {status}; reintento {n}/{total} en {wait:g}s…",
+        "provider_empty": "respuesta vacía de {model}",
+        "provider_no_json": "la respuesta no contenía JSON. Empezaba con: {start}",
         # ats adapters
         "fill_field_failed": "no pude rellenar «{label}»: {error}",
     },

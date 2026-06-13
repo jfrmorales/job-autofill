@@ -40,10 +40,14 @@ Click derecho en el icono → *Opciones* (o botón **Ajustes** del popup):
   parámetros correctos automáticamente.
 - **Probar conexión** — hace una petición mínima y te dice si la key, el modelo y
   el endpoint funcionan (sin tener que guardar ni lanzar una candidatura).
-- **Respaldo (429)** — si lo activas y el proveedor agota cuota, prueba
+- **Respaldo (429)** — si lo activas y el proveedor falla por cuota agotada (429),
+  error de servidor (5xx) o **timeout** (el modelo se queda colgado), prueba
   automáticamente con los otros proveedores que tengan API key configurada.
-- **Opciones avanzadas** — temperatura, máx. tokens y modo JSON (desactívalo si un
-  servidor compatible devuelve error 400 con `response_format`).
+- **Opciones avanzadas** — temperatura, máx. tokens, **timeout por petición** y modo
+  JSON (desactívalo si un servidor compatible devuelve error 400 con `response_format`).
+  El timeout es de **inactividad** (por defecto 180 s): la respuesta se hace en
+  *streaming* y la petición sigue viva mientras lleguen tokens; solo se corta si el
+  modelo se queda mudo ese tiempo. Súbelo para modelos lentos (p.ej. Gemma).
 - **Perfil (JSON)** — viene prerrellenado con tus datos; completa salario y teléfono.
 - **CV (texto)** — pega el texto de tu CV (la IA redacta cover letters desde aquí).
 

@@ -3,11 +3,14 @@
 // lo carga con <script>). Es la única fuente de verdad: añadir un proveedor nuevo
 // es añadir una entrada aquí; ni background.js ni options.js cambian.
 //
-// Cada proveedor describe cómo hablar con su API:
-//   endpoint(base, model) -> URL del POST
-//   headers(apiKey)       -> cabeceras (auth incluida)
-//   body(model, prompt, opts) -> cuerpo JSON de la petición
-//   extract(data)         -> texto de la respuesta (o lanza Error con el motivo)
+// Cada proveedor describe cómo hablar con su API EN STREAMING (Server-Sent
+// Events): el servidor manda el texto token a token, lo que permite un timeout
+// de INACTIVIDAD (esperar indefinidamente mientras lleguen datos) en vez de un
+// tope total que cortaría a los modelos lentos.
+//   streamEndpoint(base, model) -> URL del POST de streaming
+//   headers(apiKey)             -> cabeceras (auth incluida)
+//   streamBody(model, prompt, opts) -> cuerpo JSON (con el flag de streaming)
+//   streamDelta(obj)            -> trozo de texto de un evento SSE ya parseado
 // y metadatos de UI (label, modelos sugeridos, si la base URL es fija, etc.).
 
 // --- Formato OpenAI Chat Completions ----------------------------------------
@@ -31,11 +34,40 @@ function openaiChatBody(model, prompt, opts) {
   if (opts.jsonMode) body.response_format = { type: "json_object" };
   return body;
 }
-function openaiChatExtract(data) {
-  const choice = data && data.choices && data.choices[0];
-  const txt = choice && choice.message && choice.message.content;
-  if (!txt) throw new Error(t("prov_empty", { reason: (choice && choice.finish_reason) || "?" }));
-  return txt;
+function openaiStreamBody(model, prompt, opts) {
+  return { ...openaiChatBody(model, prompt, opts), stream: true };
+}
+function openaiStreamDelta(obj) {
+  const d = obj && obj.choices && obj.choices[0] && obj.choices[0].delta;
+  return (d && d.content) || "";
+}
+
+// --- Formato Google (Gemini / Gemma) ----------------------------------------
+function googleBody(model, prompt, opts) {
+  const gc = { temperature: opts.temperature, maxOutputTokens: opts.maxTokens };
+  // Gemma no soporta responseMimeType (JSON mode); el prompt ya pide JSON.
+  if (!model.startsWith("gemma")) gc.responseMimeType = "application/json";
+  return { contents: [{ parts: [{ text: prompt }] }], generationConfig: gc };
+}
+function googleStreamDelta(obj) {
+  const parts = obj && obj.candidates && obj.candidates[0]
+    && obj.candidates[0].content && obj.candidates[0].content.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts.filter((p) => p && typeof p.text === "string").map((p) => p.text).join("");
+}
+
+// --- Formato Anthropic (Claude) ---------------------------------------------
+function anthropicBody(model, prompt, opts) {
+  return {
+    model,
+    max_tokens: opts.maxTokens,
+    temperature: opts.temperature,
+    messages: [{ role: "user", content: prompt }],
+  };
+}
+function anthropicStreamDelta(obj) {
+  // Los eventos de texto son content_block_delta con delta.text.
+  return obj && obj.type === "content_block_delta" ? (obj.delta && obj.delta.text) || "" : "";
 }
 
 const PROVIDERS = {
@@ -55,26 +87,10 @@ const PROVIDERS = {
       ["gemma-4-31b-it", "Gemma 4 31B", "m_open_largest"],
     ],
     jsonModeConfigurable: false,
-    endpoint: (base, model) => `${base}/models/${model}:generateContent`,
     headers: (key) => ({ "Content-Type": "application/json", "x-goog-api-key": key }),
-    body: (model, prompt, opts) => {
-      const gc = { temperature: opts.temperature, maxOutputTokens: opts.maxTokens };
-      // Gemma no soporta responseMimeType (JSON mode); el prompt ya pide JSON y
-      // de todos modos extraemos el objeto del texto.
-      if (!model.startsWith("gemma")) gc.responseMimeType = "application/json";
-      return { contents: [{ parts: [{ text: prompt }] }], generationConfig: gc };
-    },
-    extract: (data) => {
-      if (data.promptFeedback?.blockReason) throw new Error(t("prov_blocked", { reason: data.promptFeedback.blockReason }));
-      const cand = data?.candidates?.[0];
-      const txt = (cand?.content?.parts || [])
-        .filter((p) => p && typeof p.text === "string").map((p) => p.text).join("");
-      if (!txt) {
-        const reason = cand?.finishReason || t("prov_no_candidates");
-        throw new Error(reason === "MAX_TOKENS" ? t("prov_max_tokens") : t("prov_empty", { reason }));
-      }
-      return txt;
-    },
+    streamEndpoint: (base, model) => `${base}/models/${model}:streamGenerateContent?alt=sse`,
+    streamBody: googleBody,
+    streamDelta: googleStreamDelta,
   },
 
   // ----------------------------------------------------------------- OpenAI
@@ -94,10 +110,10 @@ const PROVIDERS = {
     ],
     jsonModeConfigurable: true,
     defaultJsonMode: true,
-    endpoint: (base) => `${base}/chat/completions`,
     headers: (key) => ({ "Content-Type": "application/json", Authorization: `Bearer ${key}` }),
-    body: openaiChatBody,
-    extract: openaiChatExtract,
+    streamEndpoint: (base) => `${base}/chat/completions`,
+    streamBody: openaiStreamBody,
+    streamDelta: openaiStreamDelta,
   },
 
   // -------------------------------------------------------------- Anthropic
@@ -114,7 +130,6 @@ const PROVIDERS = {
       ["claude-opus-4-8", "Claude Opus 4.8", "m_strongest"],
     ],
     jsonModeConfigurable: false,
-    endpoint: (base) => `${base}/messages`,
     headers: (key) => ({
       "Content-Type": "application/json",
       "x-api-key": key,
@@ -123,17 +138,9 @@ const PROVIDERS = {
       // (extensión); sin esto la API rechaza la petición por CORS.
       "anthropic-dangerous-direct-browser-access": "true",
     }),
-    body: (model, prompt, opts) => ({
-      model,
-      max_tokens: opts.maxTokens,
-      temperature: opts.temperature,
-      messages: [{ role: "user", content: prompt }],
-    }),
-    extract: (data) => {
-      const txt = (data?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
-      if (!txt) throw new Error(t("prov_empty", { reason: data?.stop_reason || "?" }));
-      return txt;
-    },
+    streamEndpoint: (base) => `${base}/messages`,
+    streamBody: (model, prompt, opts) => ({ ...anthropicBody(model, prompt, opts), stream: true }),
+    streamDelta: anthropicStreamDelta,
   },
 
   // -------------------------------------------- Compatible con OpenAI (libre)
@@ -152,14 +159,14 @@ const PROVIDERS = {
     allowEmptyKey: true,
     jsonModeConfigurable: true,
     defaultJsonMode: false, // algunos servidores rechazan response_format
-    endpoint: (base) => `${base}/chat/completions`,
     headers: (key) => {
       const h = { "Content-Type": "application/json" };
       if (key) h.Authorization = `Bearer ${key}`;
       return h;
     },
-    body: openaiChatBody,
-    extract: openaiChatExtract,
+    streamEndpoint: (base) => `${base}/chat/completions`,
+    streamBody: openaiStreamBody,
+    streamDelta: openaiStreamDelta,
   },
 };
 
@@ -197,5 +204,7 @@ function resolveProviderConfig(store) {
     jsonMode,
     temperature: typeof store.temperature === "number" ? store.temperature : 0.4,
     maxTokens: Number(store.maxTokens) > 0 ? Number(store.maxTokens) : 8192,
+    // Timeout por petición (ms). Modelos lentos (p.ej. Gemma) pueden necesitar más.
+    timeoutMs: Number(store.timeoutSecs) > 0 ? Number(store.timeoutSecs) * 1000 : 180000,
   };
 }

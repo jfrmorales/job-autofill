@@ -44,8 +44,15 @@ function clean(s) {
   return (s || "").replace(/\s*\*\s*$/, "").replace(/\s+/g, " ").trim();
 }
 
+// ¿`el` pertenece a un widget ya capturado? El selector de react-select casa
+// varios nodos anidados del mismo widget (contenedor + input interno); este
+// nodo es duplicado si es uno ya visto o contiene/está contenido por uno.
+function isNestedDuplicate(el, seen) {
+  return seen.some((s) => s === el || s.contains(el) || el.contains(s));
+}
+
 // ------------------------------------------------------------------ escaneo
-function scan() {
+async function scan() {
   FIELD_MAP = [];
   const out = [];
   const seenRadioGroups = new Set();
@@ -93,15 +100,53 @@ function scan() {
     push(out, { el, type: "text", inputType: ty }, { label: clean(labelFor(el)), type: sub });
   });
 
-  // react-select (Greenhouse/Ashby): combobox sin <select> nativo
-  document.querySelectorAll('[class*="select__control"], [role="combobox"]').forEach((el) => {
-    if (!isVisible(el)) return;
+  // react-select (Greenhouse/Ashby): combobox sin <select> nativo. El selector
+  // puede capturar VARIOS nodos anidados del MISMO widget (el contenedor
+  // .select__control y su <input role="combobox"> interno), así que dedupimos
+  // por widget para no escanear/rellenar/registrar el campo dos veces.
+  const rsSeen = [];
+  const rsEls = [...document.querySelectorAll('[class*="select__control"], [role="combobox"]')].filter((el) => {
+    if (!isVisible(el)) return false;
     // evita duplicar si ya hay un select nativo hermano
-    if (el.closest("label,div")?.querySelector("select")) return;
-    push(out, { el, type: "reactselect" }, { label: clean(labelFor(el)) || nearbyLabel(el), type: "select", options: [] });
+    if (el.closest("label,div")?.querySelector("select")) return false;
+    // mismo widget ya capturado: este nodo contiene o está contenido por otro
+    if (isNestedDuplicate(el, rsSeen)) return false;
+    rsSeen.push(el);
+    return true;
   });
+  for (const el of rsEls) {
+    // abre el desplegable para leer sus opciones (las estáticas); así el modelo
+    // elige un valor que existe. Los typeahead asíncronos devuelven [] (sin daño).
+    const options = await readReactSelectOptions(el);
+    push(out, { el, type: "reactselect" }, { label: clean(labelFor(el)) || nearbyLabel(el), type: "select", options });
+  }
 
   return out;
+}
+
+// Abre un react-select, lee sus opciones renderizadas y lo cierra sin elegir.
+// Best-effort: los typeahead que solo cargan al teclear devuelven [].
+const RS_NOISE = /^(no options|type to search|loading|start typing|sin opciones|escribe|cargando|buscando)/i;
+async function readReactSelectOptions(controlEl) {
+  try {
+    controlEl.click();
+    let opts = [];
+    for (let i = 0; i < 6 && !opts.length; i++) {
+      await sleep(120);
+      opts = [...document.querySelectorAll('[class*="option"], [role="option"]')];
+    }
+    const labels = [...new Set(opts.map((o) => clean(o.textContent)).filter(Boolean))]
+      .filter((s) => !RS_NOISE.test(s))
+      .slice(0, 50);
+    // cierra el desplegable sin seleccionar nada
+    const inp = controlEl.matches('[role="combobox"]') ? controlEl : controlEl.querySelector('input,[role="combobox"]');
+    (inp || controlEl).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, bubbles: true }));
+    if (inp && inp.blur) inp.blur();
+    await sleep(60);
+    return labels;
+  } catch {
+    return [];
+  }
 }
 
 function push(out, internal, meta) {
@@ -151,19 +196,35 @@ function toNumber(s) {
   return digits || null;
 }
 
+// Teclea en un input de react-select SIN disparar blur (que cerraría el menú);
+// solo 'input', que es lo que dispara la búsqueda/filtrado del combobox.
+function typeIntoInput(input, value) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  setter.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 async function fillReactSelect(controlEl, value) {
   controlEl.scrollIntoView({ block: "center" });
   controlEl.click();
-  await sleep(250);
-  // intenta teclear para filtrar
-  const input = controlEl.querySelector("input") || document.activeElement;
-  if (input && input.tagName === "INPUT") setNativeValue(input, value);
-  await sleep(300);
-  // clica la opción cuyo texto coincide
-  const opts = [...document.querySelectorAll('[class*="option"], [role="option"]')];
-  const match = opts.find((o) => o.textContent.trim().toLowerCase() === value.toLowerCase())
-    || opts.find((o) => o.textContent.trim().toLowerCase().includes(value.toLowerCase()));
-  if (match) { match.click(); return true; }
+  await sleep(200);
+  // teclea para filtrar (imprescindible en los typeahead que cargan por red)
+  const input = controlEl.querySelector("input")
+    || (document.activeElement && document.activeElement.tagName === "INPUT" ? document.activeElement : null);
+  if (input) typeIntoInput(input, String(value));
+  const want = String(value).toLowerCase().trim();
+  // sondea hasta ~4s a que aparezcan/carguen las opciones y casa con el valor
+  for (let i = 0; i < 20; i++) {
+    await sleep(200);
+    const opts = [...document.querySelectorAll('[class*="option"], [role="option"]')]
+      .filter((o) => o.textContent && o.textContent.trim() && !RS_NOISE.test(o.textContent.trim()));
+    if (opts.length) {
+      const match = opts.find((o) => o.textContent.trim().toLowerCase() === want)
+        || opts.find((o) => o.textContent.trim().toLowerCase().includes(want))
+        || opts.find((o) => want.includes(o.textContent.trim().toLowerCase()));
+      if (match) { match.click(); return true; }
+    }
+  }
   return false;
 }
 
@@ -258,10 +319,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     await applyLangFromStore();
     if (msg.action === "scan") {
-      let fields = scan();
+      let fields = await scan();
       if (!fields.length) {
         await tryRevealForm(); // sin campos: intenta desplegar el form y reescanea
-        fields = scan();
+        fields = await scan();
       }
       sendResponse({ fields, pageText: pageText(), url: location.href });
     } else if (msg.action === "fill") {

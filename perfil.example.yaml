@@ -18,6 +18,22 @@ lang: es
 
 cv_path: ~/Downloads/TU_CV.pdf
 
+# Configuración de IA (opcional). Por defecto el CLI usa Anthropic (Claude) y la
+# key de la variable de entorno (ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_API_KEY…).
+# Las variables de entorno (JOB_AI_PROVIDER, JOB_AI_MODEL, JOB_AI_TIMEOUT…) tienen
+# prioridad sobre esta sección. `timeout` es de INACTIVIDAD entre tokens (las
+# llamadas se hacen en streaming), no un tope total: súbelo para modelos lentos
+# (p.ej. Gemma). | AI config (optional). Env vars override this section; `timeout`
+# is an inactivity timeout between tokens (calls are streamed), not a total cap.
+# ai:
+#   provider: google            # google | openai | anthropic | custom
+#   model: gemma-4-31b-it
+#   base_url: ""                # solo para "custom" (OpenAI-compatible)
+#   api_key: ""                 # mejor por variable de entorno
+#   temperature: 0.4
+#   max_tokens: 8192
+#   timeout: 180                # segundos de inactividad (por defecto 180)
+
 basics:
   first_name: ""
   last_name: ""

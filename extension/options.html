@@ -74,6 +74,10 @@
     <input id="maxTokens" type="number" min="256" step="256" />
     <small data-i18n="opts_maxtok_help">Súbelo si las respuestas se cortan. Por defecto 8192.</small>
 
+    <label for="timeoutSecs" data-i18n="opts_timeout_label">Timeout por petición (s)</label>
+    <input id="timeoutSecs" type="number" min="10" step="10" />
+    <small data-i18n="opts_timeout_help">Súbelo si el modelo es lento (p.ej. Gemma) y la petición se agota. Por defecto 180.</small>
+
     <label id="jsonModeRow" style="font-weight:400; display:none; margin-top:14px">
       <input id="jsonMode" type="checkbox" style="width:auto" />
       <span data-i18n-html="opts_jsonmode_label">Forzar modo JSON (<code>response_format</code>)</span>

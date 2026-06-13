@@ -9,12 +9,17 @@ Configuración (de mayor a menor prioridad):
      JOB_AI_API_KEY, o la key específica del proveedor (ANTHROPIC_API_KEY,
      OPENAI_API_KEY, GOOGLE_API_KEY/GEMINI_API_KEY).
   2. Sección `ai:` de perfil.yaml (provider, model, base_url, api_key,
-     temperature, max_tokens, json_mode).
+     temperature, max_tokens, json_mode, timeout).
   3. Valores por defecto (provider=anthropic, para no romper el flujo actual).
+
+Las peticiones se hacen en streaming (SSE) y `timeout` (env JOB_AI_TIMEOUT o
+ai.timeout, por defecto 180 s) es de INACTIVIDAD entre tokens, no un tope total:
+mientras el modelo siga generando, la espera es indefinida.
 """
 from __future__ import annotations
 import os
 import re
+import json
 import time
 import httpx
 import i18n
@@ -33,6 +38,10 @@ def _is_reasoning(model: str) -> bool:
     return bool(re.match(r"^o[1-9]", model or ""))
 
 
+# Cada proveedor llama en STREAMING (Server-Sent Events): el servidor manda el
+# texto token a token. `stream_body` arma el cuerpo con el flag de streaming y
+# `stream_delta` extrae el trozo de texto de cada evento SSE ya parseado a dict.
+
 # --- formato OpenAI Chat Completions (compartido por openai y custom) --------
 def _openai_body(model, prompt, opts):
     body = {"model": model, "messages": [{"role": "user", "content": prompt}]}
@@ -47,11 +56,53 @@ def _openai_body(model, prompt, opts):
     return body
 
 
-def _openai_extract(data):
-    txt = data["choices"][0]["message"]["content"]
-    if not txt:
-        raise RuntimeError(f"respuesta vacía (finish={data['choices'][0].get('finish_reason')})")
-    return txt
+def _openai_stream_body(model, prompt, opts):
+    return {**_openai_body(model, prompt, opts), "stream": True}
+
+
+def _openai_stream_delta(obj):
+    try:
+        return obj["choices"][0]["delta"].get("content") or ""
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
+# --- formato Google (Gemini / Gemma) ----------------------------------------
+def _google_body(model, prompt, opts):
+    gc = {"temperature": opts["temperature"], "maxOutputTokens": opts["max_tokens"]}
+    # Gemma no soporta responseMimeType (JSON mode); el prompt ya pide JSON.
+    if not model.startswith("gemma"):
+        gc["responseMimeType"] = "application/json"
+    return {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": gc}
+
+
+def _google_stream_delta(obj):
+    try:
+        parts = obj["candidates"][0]["content"]["parts"]
+    except (KeyError, IndexError, TypeError):
+        return ""
+    return "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+
+
+# --- formato Anthropic (Claude) ---------------------------------------------
+def _anthropic_body(model, prompt, opts):
+    return {
+        "model": model,
+        "max_tokens": opts["max_tokens"],
+        "temperature": opts["temperature"],
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+
+def _anthropic_stream_body(model, prompt, opts):
+    return {**_anthropic_body(model, prompt, opts), "stream": True}
+
+
+def _anthropic_stream_delta(obj):
+    # Los eventos de texto son content_block_delta con delta.type == text_delta.
+    if obj.get("type") == "content_block_delta":
+        return (obj.get("delta") or {}).get("text", "") or ""
+    return ""
 
 
 PROVIDERS = {
@@ -63,19 +114,10 @@ PROVIDERS = {
         "default_base_url": "https://generativelanguage.googleapis.com/v1beta",
         "default_model": "gemini-3.5-flash",
         "json_mode_configurable": False,
-        "endpoint": lambda base, model: f"{base}/models/{model}:generateContent",
         "headers": lambda key: {"Content-Type": "application/json", "x-goog-api-key": key},
-        "body": lambda model, prompt, opts: {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": opts["temperature"],
-                "maxOutputTokens": opts["max_tokens"],
-                **({} if model.startswith("gemma") else {"responseMimeType": "application/json"}),
-            },
-        },
-        "extract": lambda data: "".join(
-            p.get("text", "") for p in data["candidates"][0]["content"]["parts"]
-        ),
+        "stream_endpoint": lambda base, model: f"{base}/models/{model}:streamGenerateContent?alt=sse",
+        "stream_body": _google_body,
+        "stream_delta": _google_stream_delta,
     },
     # --------------------------------------------------------------- OpenAI
     "openai": {
@@ -86,10 +128,10 @@ PROVIDERS = {
         "default_model": "gpt-4o-mini",
         "json_mode_configurable": True,
         "default_json_mode": True,
-        "endpoint": lambda base, model: f"{base}/chat/completions",
         "headers": lambda key: {"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
-        "body": _openai_body,
-        "extract": _openai_extract,
+        "stream_endpoint": lambda base, model: f"{base}/chat/completions",
+        "stream_body": _openai_stream_body,
+        "stream_delta": _openai_stream_delta,
     },
     # ------------------------------------------------------------ Anthropic
     "anthropic": {
@@ -99,21 +141,14 @@ PROVIDERS = {
         "default_base_url": "https://api.anthropic.com/v1",
         "default_model": "claude-opus-4-8",  # conserva el comportamiento previo del CLI
         "json_mode_configurable": False,
-        "endpoint": lambda base, model: f"{base}/messages",
         "headers": lambda key: {
             "Content-Type": "application/json",
             "x-api-key": key,
             "anthropic-version": "2023-06-01",
         },
-        "body": lambda model, prompt, opts: {
-            "model": model,
-            "max_tokens": opts["max_tokens"],
-            "temperature": opts["temperature"],
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        "extract": lambda data: "".join(
-            b.get("text", "") for b in data["content"] if b.get("type") == "text"
-        ),
+        "stream_endpoint": lambda base, model: f"{base}/messages",
+        "stream_body": _anthropic_stream_body,
+        "stream_delta": _anthropic_stream_delta,
     },
     # -------------------------------------------- compatible con OpenAI (libre)
     "custom": {
@@ -125,13 +160,13 @@ PROVIDERS = {
         "allow_empty_key": True,
         "json_mode_configurable": True,
         "default_json_mode": False,
-        "endpoint": lambda base, model: f"{base}/chat/completions",
         "headers": lambda key: (
             {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
             if key else {"Content-Type": "application/json"}
         ),
-        "body": _openai_body,
-        "extract": _openai_extract,
+        "stream_endpoint": lambda base, model: f"{base}/chat/completions",
+        "stream_body": _openai_stream_body,
+        "stream_delta": _openai_stream_delta,
     },
 }
 
@@ -182,29 +217,70 @@ def resolve_ai_config(profile: dict) -> dict:
         "model": model,
         "base_url": base,
         "temperature": float(ai.get("temperature", 0.4)),
-        "max_tokens": int(ai.get("max_tokens", 2000)),
+        "max_tokens": int(ai.get("max_tokens", 8192)),  # igual que la extensión
         "json_mode": json_mode,
+        "timeout": float(os.environ.get("JOB_AI_TIMEOUT") or ai.get("timeout") or 180.0),
     }
 
 
-def call_provider(cfg: dict, prompt: str, timeout: float = 90.0, tries: int = 3) -> str:
-    """Hace la petición al proveedor y devuelve el texto de la respuesta.
-    Reintenta los errores transitorios del servidor (5xx) con backoff."""
+def call_provider(cfg: dict, prompt: str, timeout: float | None = None, tries: int = 3) -> str:
+    """Llama al proveedor en STREAMING y acumula la respuesta token a token.
+
+    `timeout` es de INACTIVIDAD (segundos), no un tope total: mientras el modelo
+    siga emitiendo tokens la petición se mantiene viva indefinidamente; solo se
+    aborta si el servidor deja de enviar datos durante ese tiempo (modelo
+    colgado). Reintenta los errores transitorios del servidor (5xx) con backoff.
+    Si no se indica timeout, usa el de la config (cfg['timeout'])."""
+    if timeout is None:
+        timeout = cfg.get("timeout", 180.0)
     P = cfg["P"]
-    url = P["endpoint"](cfg["base_url"], cfg["model"])
+    url = P["stream_endpoint"](cfg["base_url"], cfg["model"])
     headers = P["headers"](cfg["api_key"])
-    body = P["body"](cfg["model"], prompt, {
+    delta = P["stream_delta"]
+    body = P["stream_body"](cfg["model"], prompt, {
         "temperature": cfg["temperature"],
         "max_tokens": cfg["max_tokens"],
         "json_mode": cfg["json_mode"],
     })
+    # connect: tope corto para fallar rápido si el servidor es inalcanzable.
+    # read: inactividad entre tokens (el "indefinido mientras funcione").
+    to = httpx.Timeout(timeout, connect=min(timeout, 30.0))
     for i in range(tries):
-        r = httpx.post(url, headers=headers, json=body, timeout=timeout)
-        if r.status_code in RETRY_STATUS and i < tries - 1:
-            wait = 1.0 * (i + 1)  # 1s, 2s…
-            print(t("provider_retry", model=cfg['model'], status=r.status_code,
-                    n=i + 1, total=tries - 1, wait=wait))
-            time.sleep(wait)
-            continue
-        r.raise_for_status()
-        return P["extract"](r.json())
+        with httpx.stream("POST", url, headers=headers, json=body, timeout=to) as r:
+            if r.status_code in RETRY_STATUS and i < tries - 1:
+                wait = 1.0 * (i + 1)  # 1s, 2s…
+                print(t("provider_retry", model=cfg['model'], status=r.status_code,
+                        n=i + 1, total=tries - 1, wait=wait))
+                time.sleep(wait)
+                continue
+            if r.status_code >= 400:
+                r.read()  # consume el cuerpo para poder leer el mensaje de error
+                r.raise_for_status()
+            chunks = []
+            for line in r.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if not payload or payload == "[DONE]":
+                    continue
+                try:
+                    obj = json.loads(payload)
+                except ValueError:
+                    continue  # keep-alives / fragmentos no-JSON
+                chunks.append(delta(obj))
+            text = "".join(chunks)
+            if not text:
+                raise RuntimeError(t("provider_empty", model=cfg["model"]))
+            return text
+    raise RuntimeError("unreachable")  # el último intento siempre sale por return/raise
+
+
+def extract_json_object(text: str) -> dict:
+    """Extrae el objeto JSON de la respuesta del modelo: quita las vallas
+    markdown (```json … ```) y recorta al {…} exterior. Lanza ValueError si la
+    respuesta no contiene un objeto JSON reconocible."""
+    clean = re.sub(r"```(?:json)?", "", text or "")
+    a, b = clean.find("{"), clean.rfind("}")
+    if a < 0 or b <= a:
+        raise ValueError(t("provider_no_json", start=(text or "").strip()[:120]))
+    return json.loads(clean[a:b + 1])

@@ -27,6 +27,13 @@ Responde en el MISMO idioma de la oferta. No inventes EXPERIENCIA que no esté e
 # Reglas de respuesta (importante)
 - PROHIBIDO evadir. No uses frases como "lo discutiré en la entrevista", "estoy
   abierto a negociar", "podemos hablarlo más adelante". Comprométete con datos concretos.
+- PROHIBIDO responder con marcadores vacíos ("n/a", "N/A", "-", "ninguno", "none",
+  "no aplica", "tbd"). En preguntas sobre experiencia o conocimientos que no estén
+  literalmente en el CV, NO inventes experiencia: responde con honestidad apoyándote en
+  lo más cercano que SÍ tengas (tecnologías, proyectos o responsabilidades análogas del
+  CV) y, si procede, indica brevemente tu disposición a asumirlo. Si de verdad no hay
+  nada relevante que decir, OMITE la clave (déjala en blanco para rellenar a mano):
+  nunca pongas "n/a".
 - Salario: si el perfil trae "salary_expectation" con valor, úsalo tal cual. Si está
   vacío, ESTIMA un rango bruto anual de mercado REALISTA para este puesto concreto, la
   seniority del candidato (mira el CV) y la modalidad/ubicación (remoto, España/EU).
@@ -73,6 +80,12 @@ Answer in the SAME language as the job posting. Do NOT invent EXPERIENCE that is
 # Answer rules (important)
 - NO evasions. Don't use phrases like "I'll discuss it in the interview", "I'm
   open to negotiate", "we can talk about it later". Commit to concrete data.
+- NEVER answer with empty placeholders ("n/a", "N/A", "-", "none", "not applicable",
+  "tbd"). For questions about experience or skills not literally in the CV, do NOT
+  invent experience: answer honestly leaning on the closest thing you DO have
+  (analogous technologies, projects or responsibilities from the CV) and, if
+  appropriate, briefly note your willingness to ramp up. If there is genuinely nothing
+  relevant to say, OMIT the key (leave it blank for manual completion): never write "n/a".
 - Salary: if the profile has "salary_expectation" with a value, use it as is. If it's
   empty, ESTIMATE a REALISTIC gross annual market range for this specific role, the
   candidate's seniority (see the CV) and the modality/location (remote, Spain/EU).
@@ -113,47 +126,97 @@ Rules per field type:
   profile) and can't reasonably estimate it. Salary and notice period are ALWAYS answered.`;
 }
 
-// Hace UNA llamada al proveedor de `cfg` con el `prompt` ya construido y
-// devuelve el texto crudo de la respuesta. Lanza Error con `.status` (código
-// HTTP) y `.tag` (proveedor·modelo) para que quien llame decida si reintenta.
-async function callProvider(cfg, prompt, timeoutMs = 90000) {
+// Motivo de finalización (si el proveedor lo manda en el stream): sirve para
+// dar un error útil cuando la respuesta sale vacía (MAX_TOKENS, SAFETY, length…).
+function streamReason(o) {
+  return (o && (
+    (o.choices && o.choices[0] && o.choices[0].finish_reason) ||
+    (o.candidates && o.candidates[0] && o.candidates[0].finishReason) ||
+    (o.promptFeedback && o.promptFeedback.blockReason) ||
+    (o.delta && o.delta.stop_reason)
+  )) || "";
+}
+
+// Hace UNA llamada al proveedor de `cfg` EN STREAMING (SSE) y devuelve el texto
+// acumulado token a token. `timeoutMs` es de INACTIVIDAD: se rearma con cada
+// trozo recibido, de modo que la espera es indefinida mientras el modelo siga
+// emitiendo y solo aborta si se queda mudo ese tiempo (modelo colgado). Lanza
+// Error con `.status` (código HTTP) y `.tag` (proveedor·modelo) para que quien
+// llame decida si reintenta.
+async function callProvider(cfg, prompt, timeoutMs = cfg.timeoutMs || 180000) {
   const { P } = cfg;
   const tag = `${P.label} · ${cfg.model}`;
-  const endpoint = P.endpoint(cfg.baseUrl, cfg.model);
+  const secs = Math.round(timeoutMs / 1000);
+  const endpoint = P.streamEndpoint(cfg.baseUrl, cfg.model);
   const headers = P.headers(cfg.apiKey);
-  const body = P.body(cfg.model, prompt, {
+  const body = P.streamBody(cfg.model, prompt, {
     temperature: cfg.temperature, maxTokens: cfg.maxTokens, jsonMode: cfg.jsonMode,
   });
+  const fail = (msg, opts = {}) => {
+    const err = new Error(msg);
+    err.tag = tag;
+    if (opts.status) err.status = opts.status;
+    if (opts.timeout) err.timeout = true; // para que el respaldo lo trate como fallo
+    return err;
+  };
+  // Error de conexión/lectura: si fue por el timeout de inactividad lo marcamos
+  // como `timeout` (failover-elegible); si no, es un error de red normal.
+  const netFail = (e) => e.name === "AbortError"
+    ? fail(t("bg_timeout", { tag, secs }), { timeout: true })
+    : fail(t("bg_network", { tag, error: e.message }));
 
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  // Timeout de INACTIVIDAD: cubre la conexión y el primer byte, y se rearma con
+  // cada trozo recibido del stream.
+  let timer = setTimeout(() => ac.abort(), timeoutMs);
+  const bump = () => { clearTimeout(timer); timer = setTimeout(() => ac.abort(), timeoutMs); };
+
   let res;
   try {
     res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: ac.signal });
   } catch (e) {
-    const err = new Error(e.name === "AbortError"
-      ? t("bg_timeout", { tag, secs: Math.round(timeoutMs / 1000) })
-      : t("bg_network", { tag, error: e.message }));
-    err.tag = tag;
-    throw err;
+    clearTimeout(timer);
+    throw netFail(e);
+  }
+  if (!res.ok) {
+    clearTimeout(timer);
+    const errText = await res.text().catch(() => "");
+    throw fail(`${tag} ${res.status}: ${errText.slice(0, 300)}`, { status: res.status });
+  }
+
+  // Lee el stream SSE: cada evento es una línea `data: {…}` con JSON completo.
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "", text = "", reason = "";
+  const processLine = (raw) => {
+    const line = raw.trim();
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    let obj;
+    try { obj = JSON.parse(payload); } catch { return; } // keep-alives / fragmentos
+    text += P.streamDelta(obj);
+    reason = streamReason(obj) || reason;
+  };
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bump(); // llegaron datos: el modelo sigue vivo
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop(); // la última puede estar incompleta
+      for (const raw of lines) processLine(raw);
+    }
+    if (buf) processLine(buf); // resto sin salto de línea final
+  } catch (e) {
+    throw netFail(e);
   } finally {
     clearTimeout(timer);
   }
-  if (!res.ok) {
-    const t = await res.text();
-    const err = new Error(`${tag} ${res.status}: ${t.slice(0, 300)}`);
-    err.status = res.status;
-    err.tag = tag;
-    throw err;
-  }
-  const data = await res.json();
-  try {
-    return P.extract(data); // cada proveedor sabe dónde está el texto y qué error dar
-  } catch (e) {
-    const err = new Error(`${tag}: ${e.message}`);
-    err.tag = tag;
-    throw err;
-  }
+
+  if (!text) throw fail(t("prov_empty", { reason: reason || "?" }));
+  return text;
 }
 
 // Limpia vallas markdown (```json … ```) y recorta al objeto JSON.
@@ -172,9 +235,11 @@ function parseJsonObject(txt, tag) {
 // merece la pena reintentar la MISMA llamada. Los 500 INTERNAL de Gemma en el
 // endpoint de Google son el caso típico.
 const RETRY_STATUS = new Set([500, 502, 503, 504]);
-// Cuándo cambiar a otro proveedor: cuota agotada (429) o fallo de servidor (5xx).
+// Cuándo cambiar a otro proveedor: cuota agotada (429), fallo de servidor (5xx)
+// o el modelo se quedó colgado (timeout de inactividad). En todos esos casos
+// merece la pena probar otro proveedor en vez de fallar en seco.
 function isFailover(e) {
-  return e && (e.status === 429 || (e.status >= 500 && e.status < 600));
+  return e && (e.timeout || e.status === 429 || (e.status >= 500 && e.status < 600));
 }
 
 // Llama al proveedor reintentando los errores transitorios (5xx) de ESE mismo
@@ -219,7 +284,7 @@ function fallbackConfigs(store, excludeProvider) {
 // usuario activó el respaldo, prueba con los demás proveedores que tengan key.
 async function generate({ profile, cvText, pageText, fields, notify }) {
   const store = await chrome.storage.local.get(
-    ["provider", "model", "apiKeys", "apiKey", "customBaseUrl", "jsonMode", "temperature", "maxTokens", "fallback"]
+    ["provider", "model", "apiKeys", "apiKey", "customBaseUrl", "jsonMode", "temperature", "maxTokens", "timeoutSecs", "fallback"]
   );
   const prompt = buildPrompt(profile, cvText, pageText, fields);
   const primary = resolveProviderConfig(store); // valida y aplica compatibilidad hacia atrás
@@ -228,7 +293,9 @@ async function generate({ profile, cvText, pageText, fields, notify }) {
     return parseJsonObject(await callWithRetry(primary, prompt, notify), `${primary.P.label} · ${primary.model}`);
   } catch (e) {
     if (!isFailover(e) || !store.fallback) throw e;
-    const reason = e.status === 429 ? t("bg_quota") : t("bg_server_fail", { status: e.status });
+    const reason = e.timeout ? t("bg_stalled")
+      : e.status === 429 ? t("bg_quota")
+      : t("bg_server_fail", { status: e.status });
     if (notify) notify(t("bg_trying_fallback", { tag: e.tag || primary.P.label, reason }));
     let lastErr = e;
     for (const cfg of fallbackConfigs(store, primary.provider)) {
@@ -344,8 +411,10 @@ async function runFill(tabId, tabUrl) {
   const startedAt = Date.now();
   let title = tabUrl;
   try { const tb = await chrome.tabs.get(tabId); if (tb?.title) title = tb.title; } catch {}
-  // arranca un registro limpio de ejecución (estado "running" desde ya)
-  await chrome.storage.local.set({ lastRun: { state: "running", startedAt, url: tabUrl, title } });
+  // arranca un registro limpio de ejecución (estado "running" desde ya). Vacía
+  // runLog también: cada ejecución/página tiene su propio log, sin arrastrar las
+  // líneas de ejecuciones anteriores.
+  await chrome.storage.local.set({ lastRun: { state: "running", startedAt, url: tabUrl, title }, runLog: [] });
   await pushLog("info", t("bg_run_new", { title }));
   badge("…", "#2b6cb0");
   try {
